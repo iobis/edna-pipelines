@@ -1,0 +1,2 @@
+gnparser
+git+https://github.com/iobis/aphia-sync.git
