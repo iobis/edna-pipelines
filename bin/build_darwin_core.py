@@ -30,6 +30,13 @@ DNA_DERIVED_DATA_FIELDS = (
     "occurrenceID",
     "DNA_sequence",
 )
+SAMPLE_ID_PREFIX = "s_"
+
+
+def clean_sample_id(sample_id: str, *, clean_prefix: bool) -> str:
+    if clean_prefix and sample_id.startswith(SAMPLE_ID_PREFIX):
+        return sample_id[len(SAMPLE_ID_PREFIX) :]
+    return sample_id
 
 
 def load_tsv(path: Path) -> list[dict[str, str]]:
@@ -148,6 +155,8 @@ def build_occurrence_table(
     metadata_by_sample: dict[str, dict[str, str]],
     pipeline_params: dict,
     output_path: Path,
+    *,
+    clean_prefix: bool,
 ) -> list[tuple[str, str]]:
     """
     Build Darwin Core Occurrence table. Occurrence IDs are constructed as {sample_id}_{asv_id}.
@@ -187,8 +196,9 @@ def build_occurrence_table(
             if not abundance or abundance == "0":
                 continue
 
-            occurrence_id = f"{sample_id}_{asv_id}"
-            meta_row = metadata_by_sample.get(sample_id, {})
+            output_sample_id = clean_sample_id(sample_id, clean_prefix=clean_prefix)
+            occurrence_id = f"{output_sample_id}_{asv_id}"
+            meta_row = metadata_by_sample.get(output_sample_id, metadata_by_sample.get(sample_id, {}))
 
             row: dict[str, str] = {
                 "occurrenceID": occurrence_id,
@@ -197,7 +207,7 @@ def build_occurrence_table(
                 "taxonID": "",
                 "organismQuantity": abundance,
                 "organismQuantityType": "",
-                "sample_id": sample_id,
+                "sample_id": output_sample_id,
                 **{rank: merged.get(rank, "") for rank in OUTPUT_RANK_COLUMNS},
                 "identificationRemarks": merged.get("identificationRemarks", ""),
             }
@@ -248,6 +258,8 @@ def build_darwin_core(
     ampliseq_results: Path,
     output_dir: Path,
     metadata_path: Path,
+    *,
+    clean_prefix: bool = False,
 ) -> Path:
     """Read ampliseq + worms under output_dir, write Darwin Core tables to publishing/."""
 
@@ -273,6 +285,7 @@ def build_darwin_core(
         metadata_by_sample,
         pipeline_params,
         dwc_dir / "occurrence.tsv",
+        clean_prefix=clean_prefix,
     )
     build_dna_derived_data_table(
         dada2_rows,
@@ -292,6 +305,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="pipeline output directory",
     )
     parser.add_argument("--metadata", type=Path, required=True)
+    parser.add_argument(
+        "--clean-prefix",
+        action="store_true",
+        help="Remove s_ prefix from sample IDs in Darwin Core output",
+    )
     return parser.parse_args(argv)
 
 
@@ -301,7 +319,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"metadata not found: {args.metadata}", file=sys.stderr)
         return 1
     try:
-        build_darwin_core(args.ampliseq_results, args.output, args.metadata)
+        build_darwin_core(
+            args.ampliseq_results,
+            args.output,
+            args.metadata,
+            clean_prefix=args.clean_prefix,
+        )
     except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
         print(exc, file=sys.stderr)
         return 1

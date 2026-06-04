@@ -9,6 +9,7 @@ params.outdir = params.outdir ?: 'results'
 params.ampliseq_outdir = params.ampliseq_outdir ?: "${params.outdir}/ampliseq"
 params.darwincore_outdir = params.darwincore_outdir ?: "${params.outdir}/darwincore"
 params.ampliseq_profile = params.ampliseq_profile ?: 'standard'
+params.clean_prefix = params.clean_prefix ?: false
 
 workflow {
     def ampliseq_done_ch
@@ -136,7 +137,8 @@ process BUILD_DARWIN_CORE {
     python3 "${projectDir}/bin/build_darwin_core.py" \\
       --ampliseq-results ${params.ampliseq_results} \\
       --metadata ${params.metadata} \\
-      --output ${darwincore_outdir}
+      --output ${darwincore_outdir} \\
+      ${params.clean_prefix ? '--clean-prefix' : ''}
     mkdir -p publishing
     cp ${darwincore_outdir}/publishing/*.tsv publishing/
     """
