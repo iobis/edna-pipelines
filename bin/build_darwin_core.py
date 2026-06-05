@@ -30,6 +30,20 @@ DNA_DERIVED_DATA_FIELDS = (
     "occurrenceID",
     "DNA_sequence",
 )
+DNA_DERIVED_DATA_METADATA_FIELDS = (
+    "lib_layout",
+    "seq_meth",
+    "samp_name",
+    "samp_size",
+    "target_gene",
+    "ref_db",
+    "tax_class",
+    "pcr_primer_forward",
+    "pcr_primer_reverse",
+    "pcr_primer_reference",
+    "env_medium",
+)
+METADATA_SAMPLE_ID_COLUMNS = ("sampleID", "sample_id", "sample")
 SAMPLE_ID_PREFIX = "s_"
 
 
@@ -47,10 +61,25 @@ def load_tsv(path: Path) -> list[dict[str, str]]:
 def load_metadata(path: Path) -> dict[str, dict[str, str]]:
     by_sample: dict[str, dict[str, str]] = {}
     for row in load_tsv(path):
-        sample_id = (row.get("sampleID") or row.get("sample_id") or "").strip()
+        sample_id = ""
+        for column in METADATA_SAMPLE_ID_COLUMNS:
+            sample_id = (row.get(column) or "").strip()
+            if sample_id:
+                break
         if sample_id:
             by_sample[sample_id] = row
     return by_sample
+
+
+def metadata_dna_derived_fields(
+    metadata_by_sample: dict[str, dict[str, str]],
+) -> tuple[str, ...]:
+    available: set[str] = set()
+    for row in metadata_by_sample.values():
+        available.update(row.keys())
+    return tuple(
+        field for field in DNA_DERIVED_DATA_METADATA_FIELDS if field in available
+    )
 
 
 def find_dada2_table(ampliseq_root: Path) -> Path:
@@ -157,10 +186,10 @@ def build_occurrence_table(
     output_path: Path,
     *,
     clean_prefix: bool,
-) -> list[tuple[str, str]]:
+) -> list[tuple[str, str, str]]:
     """
     Build Darwin Core Occurrence table. Occurrence IDs are constructed as {sample_id}_{asv_id}.
-    All metadata columns are added to the output.
+    Non-DNA-derived metadata columns are added to the output.
     """
 
     _ = pipeline_params
@@ -172,10 +201,10 @@ def build_occurrence_table(
     metadata_fields: set[str] = set()
     for meta in metadata_by_sample.values():
         metadata_fields.update(meta.keys())
-    metadata_fields.difference_update({"sampleID", "sample_id", ""})
+    metadata_fields.difference_update(set(METADATA_SAMPLE_ID_COLUMNS) | {"", *DNA_DERIVED_DATA_METADATA_FIELDS})
 
     occurrence_rows: list[dict[str, str]] = []
-    occurrence_index: list[tuple[str, str]] = []
+    occurrence_index: list[tuple[str, str, str]] = []
 
     # Iterate over DADA2 rows to get sample x ASV abundance
     for dada2_row in dada2_rows:
@@ -217,7 +246,7 @@ def build_occurrence_table(
                 row[field] = (meta_row.get(field) or "").strip()
 
             occurrence_rows.append(row)
-            occurrence_index.append((occurrence_id, asv_id))
+            occurrence_index.append((occurrence_id, asv_id, output_sample_id))
 
     # Extend the fixed Darwin Core fields with all metadata columns
     occurrence_fieldnames = list(OCCURRENCE_FIELDS) + sorted(metadata_fields)
@@ -227,31 +256,36 @@ def build_occurrence_table(
 
 def build_dna_derived_data_table(
     dada2_rows: list[dict[str, str]],
-    occurrence_index: list[tuple[str, str]],
+    occurrence_index: list[tuple[str, str, str]],
+    metadata_by_sample: dict[str, dict[str, str]],
+    dna_metadata_fields: tuple[str, ...],
     output_path: Path,
 ) -> None:
     """
     Build DNA derived data table aligned 1:1 with Occurrence records.
 
-    Each row uses the same occurrenceID as Occurrence and the ASV sequence from the
-    DADA2 table.
+    Each row uses the same occurrenceID as Occurrence, the ASV sequence from the
+    DADA2 table, and DNA-derived metadata fields from the matching sample row.
     """
 
     dada2_by_asv = index_rows_by_asv(dada2_rows)
     dna_rows: list[dict[str, str]] = []
 
-    for occurrence_id, asv_id in occurrence_index:
+    for occurrence_id, asv_id, sample_id in occurrence_index:
         if not asv_id:
             continue
         sequence = (dada2_by_asv.get(asv_id, {}).get("sequence") or "").strip()
-        dna_rows.append(
-            {
-                "occurrenceID": occurrence_id,
-                "DNA_sequence": sequence,
-            }
-        )
+        meta_row = metadata_by_sample.get(sample_id, {})
+        row: dict[str, str] = {
+            "occurrenceID": occurrence_id,
+            "DNA_sequence": sequence,
+        }
+        for field in dna_metadata_fields:
+            row[field] = (meta_row.get(field) or "").strip()
+        dna_rows.append(row)
 
-    write_tsv(output_path, DNA_DERIVED_DATA_FIELDS, dna_rows)
+    fieldnames = DNA_DERIVED_DATA_FIELDS + dna_metadata_fields
+    write_tsv(output_path, fieldnames, dna_rows)
 
 
 def build_darwin_core(
@@ -275,6 +309,7 @@ def build_darwin_core(
     vsearch_rows = load_tsv(find_worms_matched(output_dir, "vsearch"))
     dada2_rows = load_tsv(find_dada2_table(ampliseq_results))
     metadata_by_sample = load_metadata(metadata_path)
+    dna_metadata_fields = metadata_dna_derived_fields(metadata_by_sample)
 
     dwc_dir = output_dir / "publishing"
     dwc_dir.mkdir(parents=True, exist_ok=True)
@@ -290,6 +325,8 @@ def build_darwin_core(
     build_dna_derived_data_table(
         dada2_rows,
         occurrence_index,
+        metadata_by_sample,
+        dna_metadata_fields,
         dwc_dir / "dnaderiveddata.tsv",
     )
     return dwc_dir
