@@ -122,7 +122,7 @@ process WORMS_MATCH {
 
 process BUILD_DARWIN_CORE {
     tag 'dwc'
-    publishDir { darwincore_outdir }, mode: 'copy'
+    publishDir { darwincore_outdir }, mode: 'copy', overwrite: true
 
     input:
     val _worms_done

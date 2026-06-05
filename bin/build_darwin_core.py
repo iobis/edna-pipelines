@@ -58,9 +58,14 @@ def load_tsv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle, delimiter="\t"))
 
 
+def normalize_metadata_row(row: dict[str, str]) -> dict[str, str]:
+    return {(key or "").strip(): (value or "").strip() for key, value in row.items() if (key or "").strip()}
+
+
 def load_metadata(path: Path) -> dict[str, dict[str, str]]:
     by_sample: dict[str, dict[str, str]] = {}
     for row in load_tsv(path):
+        row = normalize_metadata_row(row)
         sample_id = ""
         for column in METADATA_SAMPLE_ID_COLUMNS:
             sample_id = (row.get(column) or "").strip()
@@ -71,14 +76,28 @@ def load_metadata(path: Path) -> dict[str, dict[str, str]]:
     return by_sample
 
 
+def metadata_column_names(metadata_by_sample: dict[str, dict[str, str]]) -> set[str]:
+    columns: set[str] = set()
+    for row in metadata_by_sample.values():
+        columns.update(row.keys())
+    return columns
+
+
 def metadata_dna_derived_fields(
     metadata_by_sample: dict[str, dict[str, str]],
 ) -> tuple[str, ...]:
-    available: set[str] = set()
-    for row in metadata_by_sample.values():
-        available.update(row.keys())
+    available = metadata_column_names(metadata_by_sample)
     return tuple(
         field for field in DNA_DERIVED_DATA_METADATA_FIELDS if field in available
+    )
+
+
+def occurrence_metadata_fields(
+    metadata_by_sample: dict[str, dict[str, str]],
+) -> tuple[str, ...]:
+    excluded = set(METADATA_SAMPLE_ID_COLUMNS) | set(DNA_DERIVED_DATA_METADATA_FIELDS)
+    return tuple(
+        sorted(field for field in metadata_column_names(metadata_by_sample) if field not in excluded)
     )
 
 
@@ -182,6 +201,7 @@ def build_occurrence_table(
     vsearch_rows: list[dict[str, str]],
     dada2_rows: list[dict[str, str]],
     metadata_by_sample: dict[str, dict[str, str]],
+    occurrence_metadata_fieldnames: tuple[str, ...],
     pipeline_params: dict,
     output_path: Path,
     *,
@@ -196,12 +216,6 @@ def build_occurrence_table(
 
     vsearch_by_asv = index_rows_by_asv(vsearch_rows)
     sintax_by_asv = index_rows_by_asv(sintax_rows)
-
-    # Collect all metadata field names (excluding the various sample ID keys)
-    metadata_fields: set[str] = set()
-    for meta in metadata_by_sample.values():
-        metadata_fields.update(meta.keys())
-    metadata_fields.difference_update(set(METADATA_SAMPLE_ID_COLUMNS) | {"", *DNA_DERIVED_DATA_METADATA_FIELDS})
 
     occurrence_rows: list[dict[str, str]] = []
     occurrence_index: list[tuple[str, str, str]] = []
@@ -241,15 +255,14 @@ def build_occurrence_table(
                 "identificationRemarks": merged.get("identificationRemarks", ""),
             }
 
-            # Attach all metadata fields for this sample
-            for field in metadata_fields:
+            # Attach occurrence-level metadata only (DNA-derived fields go to dnaderiveddata.tsv)
+            for field in occurrence_metadata_fieldnames:
                 row[field] = (meta_row.get(field) or "").strip()
 
             occurrence_rows.append(row)
             occurrence_index.append((occurrence_id, asv_id, output_sample_id))
 
-    # Extend the fixed Darwin Core fields with all metadata columns
-    occurrence_fieldnames = list(OCCURRENCE_FIELDS) + sorted(metadata_fields)
+    occurrence_fieldnames = list(OCCURRENCE_FIELDS) + list(occurrence_metadata_fieldnames)
     write_tsv(output_path, tuple(occurrence_fieldnames), occurrence_rows)
     return occurrence_index
 
@@ -310,6 +323,7 @@ def build_darwin_core(
     dada2_rows = load_tsv(find_dada2_table(ampliseq_results))
     metadata_by_sample = load_metadata(metadata_path)
     dna_metadata_fields = metadata_dna_derived_fields(metadata_by_sample)
+    occurrence_metadata_fieldnames = occurrence_metadata_fields(metadata_by_sample)
 
     dwc_dir = output_dir / "publishing"
     dwc_dir.mkdir(parents=True, exist_ok=True)
@@ -318,6 +332,7 @@ def build_darwin_core(
         vsearch_rows,
         dada2_rows,
         metadata_by_sample,
+        occurrence_metadata_fieldnames,
         pipeline_params,
         dwc_dir / "occurrence.tsv",
         clean_prefix=clean_prefix,
