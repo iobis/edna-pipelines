@@ -36,3 +36,9 @@ results/
     ├── worms/
     └── publishing/
 ```
+
+## Tests
+
+```bash
+pip install pytest && pytest
+```
