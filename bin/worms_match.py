@@ -135,10 +135,12 @@ def match_distinct_taxa(
         canonical = hit.get("canonical")
         record = hit.get("record") or {}
         matched_name = record.get("valid_name") or record.get("scientificname") or ""
+        rank = record.get("rank")
         cache[(scientific_name, taxon_rank)] = {
             "matched_aphiaid": matched_aphiaid,
             "matched_name": matched_name,
             "canonical": canonical or "",
+            "rank": rank.lower() if rank else rank,
         }
     return cache
 
@@ -167,12 +169,21 @@ def enrich_rows_with_worms(
             out_row["scientificNameID"] = ""
             out_row["taxonRank"] = ""
         else:
-            scientific_name_out, scientific_name_id = worms_match_columns(
-                worms_cache[(scientific_name, taxon_rank)]
-            )
-            out_row["scientificName"] = scientific_name_out
-            out_row["scientificNameID"] = scientific_name_id
-            out_row["taxonRank"] = taxon_rank.lower()
+            cache_entry = worms_cache[(scientific_name, taxon_rank)]
+            row_rank = taxon_rank.lower()
+            cache_rank = cache_entry.get("rank")
+            # Avoid issues where species contains a name with sp. which gets matched to a genus.
+            # In that case do not add the WoRMS match.
+            if row_rank == "species" and cache_rank != "species":
+                out_row["scientificName"] = ""
+                out_row["scientificNameID"] = ""
+                out_row["taxonRank"] = ""
+            else:
+                scientific_name_out, scientific_name_id = worms_match_columns(cache_entry)
+                out_row["scientificName"] = scientific_name_out
+                out_row["scientificNameID"] = scientific_name_id
+                out_row["taxonRank"] = row_rank
+
         enriched.append(out_row)
     return enriched
 
