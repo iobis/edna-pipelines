@@ -47,6 +47,30 @@ def test_finest_taxon_falls_back_to_genus_when_species_na() -> None:
     assert (name, rank) == ("Gymnodinium", "Genus")
 
 
+def test_merge_asv_taxonomy_uses_vsearch_species_when_genera_match() -> None:
+    sintax_row = {"Genus": "Gadus", "Species": ""}
+    vsearch_row = {"Genus": "Gadus", "Species": "morhua"}
+    merged = merge_asv_taxonomy(sintax_row, vsearch_row)
+    assert merged["species"] == "morhua"
+    assert "VSEARCH species assignment: morhua" in merged["identificationRemarks"]
+
+
+def test_merge_asv_taxonomy_drops_vsearch_species_when_genera_differ() -> None:
+    sintax_row = {"Genus": "Eukaryota", "Species": ""}
+    vsearch_row = {"Genus": "Gymnodinium", "Species": "Gymnodinium_sp._NVA/RUS/2008"}
+    merged = merge_asv_taxonomy(sintax_row, vsearch_row)
+    assert merged["species"] == ""
+    assert "genus does not match SINTAX" in merged["identificationRemarks"]
+
+
+def test_merge_asv_taxonomy_drops_vsearch_species_when_sintax_genus_missing() -> None:
+    sintax_row = {"Kingdom": "Eukaryota", "Genus": "", "Species": ""}
+    vsearch_row = {"Genus": "Gymnodinium", "Species": "Gymnodinium_sp._NVA/RUS/2008"}
+    merged = merge_asv_taxonomy(sintax_row, vsearch_row)
+    assert merged["species"] == ""
+    assert "genus does not match SINTAX" in merged["identificationRemarks"]
+
+
 @pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_enrich_rows_with_worms_skips_gymnodinium_sp_placeholder() -> None:
     def fake_match(taxa, worms_db):

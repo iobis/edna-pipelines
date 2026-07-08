@@ -143,8 +143,45 @@ def species_label(row: dict[str, str]) -> str:
     return (row.get("Species") or "").strip()
 
 
-def identification_remarks(sintax_species: str, vsearch_species: str) -> str:
+def genus_label(row: dict[str, str]) -> str:
+    return (row.get("Genus") or "").strip()
+
+
+def genera_agree(sintax_row: dict[str, str], vsearch_row: dict[str, str]) -> bool:
+    sintax_genus = genus_label(sintax_row)
+    vsearch_genus = genus_label(vsearch_row)
+    return bool(sintax_genus and vsearch_genus and sintax_genus.casefold() == vsearch_genus.casefold())
+
+
+def vsearch_species_if_genus_agrees(
+    sintax_row: dict[str, str], vsearch_row: dict[str, str]
+) -> tuple[str, str]:
+    """Return (accepted_species, rejected_species) from VSEARCH."""
+
+    vsearch_species = species_label(vsearch_row)
+    if not vsearch_species:
+        return "", ""
+    if genera_agree(sintax_row, vsearch_row):
+        return vsearch_species, ""
+    return "", vsearch_species
+
+
+def identification_remarks(
+    sintax_species: str,
+    vsearch_species: str,
+    *,
+    vsearch_species_rejected: str = "",
+    sintax_genus: str = "",
+    vsearch_genus: str = "",
+) -> str:
     remarks: list[str] = []
+    if vsearch_species_rejected:
+        remarks.append(
+            "VSEARCH species assignment removed (genus does not match SINTAX): "
+            f"{vsearch_species_rejected} "
+            f"(SINTAX genus: {sintax_genus or 'unassigned'}; "
+            f"VSEARCH genus: {vsearch_genus or 'unassigned'})"
+        )
     if sintax_species and not vsearch_species:
         remarks.append(
             "SINTAX species assignment removed (not replaced by VSEARCH): "
@@ -171,7 +208,9 @@ def merge_asv_taxonomy(
 
     vsearch_row = vsearch_row or {}
     sintax_species = species_label(sintax_row)
-    vsearch_species = species_label(vsearch_row)
+    vsearch_species, vsearch_species_rejected = vsearch_species_if_genus_agrees(
+        sintax_row, vsearch_row
+    )
 
     merged: dict[str, str] = {
         "kingdom": (sintax_row.get("Kingdom") or "").strip(),
@@ -179,11 +218,17 @@ def merge_asv_taxonomy(
         "class": (sintax_row.get("Class") or "").strip(),
         "order": (sintax_row.get("Order") or "").strip(),
         "family": (sintax_row.get("Family") or "").strip(),
-        "genus": (sintax_row.get("Genus") or "").strip(),
+        "genus": genus_label(sintax_row),
         "species": vsearch_species,
     }
 
-    merged["identificationRemarks"] = identification_remarks(sintax_species, vsearch_species)
+    merged["identificationRemarks"] = identification_remarks(
+        sintax_species,
+        vsearch_species,
+        vsearch_species_rejected=vsearch_species_rejected,
+        sintax_genus=genus_label(sintax_row),
+        vsearch_genus=genus_label(vsearch_row),
+    )
     return merged
 
 
