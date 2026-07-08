@@ -2,3 +2,9 @@ __pycache__
 .DS_Store
 *.pyc
 third-party
+.nextflow
+.vscode
+data
+results
+third_party
+work
