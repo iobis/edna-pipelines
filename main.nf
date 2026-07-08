@@ -98,7 +98,7 @@ process RUN_AMPLISEQ {
 
 process WORMS_MATCH {
     tag "$method"
-    publishDir { "${darwincore_outdir}/worms/${method}" }, mode: 'copy'
+    publishDir { "${darwincore_outdir}/worms/${method}" }, mode: 'copy', overwrite: true
 
     input:
     val method
