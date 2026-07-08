@@ -28,7 +28,31 @@ METHOD_SUBDIR = {
     "sintax": "sintax",
     "vsearch": "vsearch_lca",
 }
-PLACEHOLDER_NAMES = frozenset({"na", "unassigned", ""})
+PLACEHOLDER_NAMES = frozenset({"na", "n/a", "unassigned", ""})
+RANK_COLUMN_NAMES = frozenset(
+    {rank.casefold() for rank in FINEST_RANK_COLUMNS}
+    | {rank.lower() for rank in FINEST_RANK_COLUMNS}
+)
+
+
+def normalize_missing_value(value: str) -> str:
+    stripped = (value or "").strip()
+    if stripped.casefold() in PLACEHOLDER_NAMES:
+        return ""
+    return stripped
+
+
+def clean_missing_rank_values(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Replace common missing value placeholders with empty strings in rank columns."""
+
+    cleaned: list[dict[str, str]] = []
+    for row in rows:
+        out_row = dict(row)
+        for column, value in row.items():
+            if column.casefold() in RANK_COLUMN_NAMES:
+                out_row[column] = normalize_missing_value(value)
+        cleaned.append(out_row)
+    return cleaned
 
 
 def load_tsv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
@@ -205,6 +229,7 @@ def process_tsv_table(
     """Read a TSV with taxonomic rank columns; write it with WoRMS match columns added."""
 
     input_fieldnames, rows = load_tsv(input_path)
+    rows = clean_missing_rank_values(rows)
     enriched = enrich_rows_with_worms(rows, worms_db=worms_db, ranks=ranks)
     write_tsv(output_path, output_fieldnames(input_fieldnames), enriched)
 

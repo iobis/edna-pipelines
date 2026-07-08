@@ -3,6 +3,7 @@ __pycache__
 *.pyc
 third-party
 .nextflow
+.nextflow.log*
 .vscode
 data
 results

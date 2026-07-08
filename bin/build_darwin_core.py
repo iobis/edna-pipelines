@@ -6,6 +6,11 @@ import json
 import sys
 from pathlib import Path
 
+try:
+    from bin.worms_match import normalize_missing_value
+except ModuleNotFoundError:
+    from worms_match import normalize_missing_value
+
 
 INPUT_RANK_COLUMNS = ("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
 OUTPUT_RANK_COLUMNS = tuple(rank.lower() for rank in INPUT_RANK_COLUMNS)
@@ -139,12 +144,16 @@ def write_tsv(path: Path, fieldnames: tuple[str, ...], rows: list[dict[str, str]
         writer.writerows(rows)
 
 
+def rank_value(row: dict[str, str], column: str) -> str:
+    return normalize_missing_value(row.get(column) or "")
+
+
 def species_label(row: dict[str, str]) -> str:
-    return (row.get("Species") or "").strip()
+    return rank_value(row, "Species")
 
 
 def genus_label(row: dict[str, str]) -> str:
-    return (row.get("Genus") or "").strip()
+    return rank_value(row, "Genus")
 
 
 def genera_agree(sintax_row: dict[str, str], vsearch_row: dict[str, str]) -> bool:
@@ -213,11 +222,11 @@ def merge_asv_taxonomy(
     )
 
     merged: dict[str, str] = {
-        "kingdom": (sintax_row.get("Kingdom") or "").strip(),
-        "phylum": (sintax_row.get("Phylum") or "").strip(),
-        "class": (sintax_row.get("Class") or "").strip(),
-        "order": (sintax_row.get("Order") or "").strip(),
-        "family": (sintax_row.get("Family") or "").strip(),
+        "kingdom": rank_value(sintax_row, "Kingdom"),
+        "phylum": rank_value(sintax_row, "Phylum"),
+        "class": rank_value(sintax_row, "Class"),
+        "order": rank_value(sintax_row, "Order"),
+        "family": rank_value(sintax_row, "Family"),
         "genus": genus_label(sintax_row),
         "species": vsearch_species,
     }
