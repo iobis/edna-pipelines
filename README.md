@@ -12,6 +12,7 @@ nextflow run main.nf -profile docker \
   --single_end \
   --skip_cutadapt \
   --skip_dada_taxonomy \
+  --skip_phyloseq \
   --sintax_ref_tax_custom "$(pwd)/data/ncbi_18s_bu_pga_derep_filtered_sintax_20260702.fasta.gz" \
   --sintax_assign_taxlevels Kingdom,Phylum,Class,Order,Family,Genus,Species \
   --vsearch_lca_ref_tax_custom "$(pwd)/data/ncbi_18s_bu_pga_derep_filtered_sintax_20260702.fasta.gz" \
