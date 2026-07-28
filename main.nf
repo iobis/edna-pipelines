@@ -85,6 +85,7 @@ process RUN_AMPLISEQ {
       ${params.skip_cutadapt ? '--skip_cutadapt' : ''} \\
       ${params.skip_dada_taxonomy ? '--skip_dada_taxonomy' : ''} \\
       ${params.skip_phyloseq ? '--skip_phyloseq' : ''} \\
+      ${params.skip_tse ? '--skip_tse' : ''} \\
       ${params.sintax_ref_tax_custom ? "--sintax_ref_tax_custom ${params.sintax_ref_tax_custom}" : ''} \\
       ${params.sintax_assign_taxlevels ? "--sintax_assign_taxlevels ${params.sintax_assign_taxlevels}" : ''} \\
       ${params.vsearch_lca_ref_tax_custom ? "--vsearch_lca_ref_tax_custom ${params.vsearch_lca_ref_tax_custom}" : ''} \\
