@@ -96,6 +96,8 @@ process RUN_AMPLISEQ {
       --input ${params.input} \\
       --outdir ${ampliseq_outdir_abs} \\
       --sequencing_type ${ampliseq_sequencing_type} \\
+      ${params.binned_quality ? "--binned_quality ${params.binned_quality}" : ''} \\
+      ${params.ignore_binned_quality ? '--ignore_binned_quality' : ''} \\
       ${params.skip_cutadapt ? '--skip_cutadapt' : ''} \\
       ${params.skip_dada_taxonomy ? '--skip_dada_taxonomy' : ''} \\
       ${params.skip_phyloseq ? '--skip_phyloseq' : ''} \\
