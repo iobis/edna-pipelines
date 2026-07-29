@@ -9,7 +9,7 @@ Single ended:
 ```bash
 nextflow run main.nf -profile docker \
   --input "$(pwd)/data/samplesheet.tsv" \
-  --single_end \
+  --sequencing_type illumina_se \
   --skip_cutadapt \
   --skip_dada_taxonomy \
   --skip_phyloseq \

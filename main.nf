@@ -78,6 +78,7 @@ process RUN_AMPLISEQ {
         : ''
     def ampliseq_dir = "${projectDir}/third_party/nf-core-ampliseq"
     def ampliseq_update = params.ampliseq_update ? 'true' : 'false'
+    def ampliseq_sequencing_type = params.sequencing_type ?: 'illumina_pe'
     """
     set -euo pipefail
     {
@@ -94,7 +95,7 @@ process RUN_AMPLISEQ {
       -profile ${ampliseq_profile}${ampliseq_config_flag} \\
       --input ${params.input} \\
       --outdir ${ampliseq_outdir_abs} \\
-      ${params.single_end ? '--single_end' : ''} \\
+      --sequencing_type ${ampliseq_sequencing_type} \\
       ${params.skip_cutadapt ? '--skip_cutadapt' : ''} \\
       ${params.skip_dada_taxonomy ? '--skip_dada_taxonomy' : ''} \\
       ${params.skip_phyloseq ? '--skip_phyloseq' : ''} \\
