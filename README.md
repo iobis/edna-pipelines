@@ -27,6 +27,21 @@ nextflow run main.nf -profile docker \
   --outdir results
 ```
 
+### nf-core/ampliseq source
+
+Defaults: `--ampliseq_repo https://github.com/nf-core/ampliseq.git`, `--ampliseq_ref dev`, `--ampliseq_update false`.
+
+On the first run, the pipeline clones ampliseq into `third_party/nf-core-ampliseq` and checks out `ampliseq_ref`. With `--ampliseq_update true`, each run fetches and checks out that ref again (use when tracking `dev` or testing a PR branch). The checked-out commit is logged and written to `results/ampliseq/ampliseq.revision`.
+
+Example: test a PR branch from a fork:
+
+```bash
+nextflow run main.nf -profile docker ... \
+  --ampliseq_repo https://github.com/pieterprovoost/ampliseq.git \
+  --ampliseq_ref fix-taxonomy-hash-comment \
+  --ampliseq_update true
+```
+
 ## Output
 
 After a full run with `--outdir results`:
@@ -34,6 +49,8 @@ After a full run with `--outdir results`:
 ```
 results/
 ├── ampliseq/
+│   ├── ampliseq.revision   # repo, ref, and commit used for this run
+│   └── ampliseq.done
 └── darwincore/
     ├── worms/
     └── publishing/
