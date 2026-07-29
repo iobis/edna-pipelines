@@ -10,6 +10,7 @@ Single ended:
 nextflow run main.nf -profile docker \
   --input "$(pwd)/data/samplesheet.tsv" \
   --sequencing_type illumina_se \
+  --binned_quality 2,12,24,40 \
   --skip_cutadapt \
   --skip_dada_taxonomy \
   --skip_phyloseq \
