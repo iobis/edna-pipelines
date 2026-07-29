@@ -42,7 +42,7 @@ workflow {
     if (params.run_ampliseq) {
         if (!params.input) error('Set --input samplesheet when --run_ampliseq true')
         RUN_AMPLISEQ(channel.value(ampliseq_outdir_abs))
-        ampliseq_done_ch = RUN_AMPLISEQ.out
+        ampliseq_done_ch = RUN_AMPLISEQ.out.done
         ampliseq_results_path = ampliseq_outdir_abs
     } else if (!params.ampliseq_results) {
         error('Set --ampliseq_results when --run_ampliseq false')
@@ -62,22 +62,35 @@ workflow {
 
 process RUN_AMPLISEQ {
     tag 'ampliseq'
-    publishDir { ampliseq_outdir_abs }, mode: 'copy', pattern: 'ampliseq.done'
+    publishDir { ampliseq_outdir_abs }, mode: 'copy', pattern: 'ampliseq.{done,revision}'
 
     input:
     val ampliseq_outdir_abs
 
     output:
-    path 'ampliseq.done'
+    path 'ampliseq.done', emit: done
+    path 'ampliseq.revision', emit: revision
 
     script:
     def ampliseq_profile = params.ampliseq_profile ?: 'standard'
     def ampliseq_config_flag = ampliseq_profile == 'docker'
         ? " -c ${projectDir}/conf/ampliseq_docker.config"
         : ''
+    def ampliseq_dir = "${projectDir}/third_party/nf-core-ampliseq"
+    def ampliseq_update = params.ampliseq_update ? 'true' : 'false'
     """
     set -euo pipefail
-    nextflow run "${projectDir}/third_party/nf-core-ampliseq" \\
+    {
+      echo "ampliseq_repo=${params.ampliseq_repo}"
+      echo "ampliseq_ref=${params.ampliseq_ref}"
+      bash "${projectDir}/scripts/ensure_ampliseq.sh" \\
+        --repo "${params.ampliseq_repo}" \\
+        --ref "${params.ampliseq_ref}" \\
+        --update ${ampliseq_update} \\
+        --target-dir "${ampliseq_dir}"
+    } | tee ampliseq.revision
+    echo "Running nf-core/ampliseq from ${ampliseq_dir} (${params.ampliseq_repo} @ ${params.ampliseq_ref})" >&2
+    nextflow run "${ampliseq_dir}" \\
       -profile ${ampliseq_profile}${ampliseq_config_flag} \\
       --input ${params.input} \\
       --outdir ${ampliseq_outdir_abs} \\
