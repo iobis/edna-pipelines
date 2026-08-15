@@ -59,30 +59,41 @@ case "${UPDATE}" in
     ;;
 esac
 
-checkout_ref() {
-  if git -C "${TARGET_DIR}" show-ref --verify --quiet "refs/heads/${REF}"; then
-    git -C "${TARGET_DIR}" checkout -q "${REF}"
+fetch_ref() {
+  # Update remote-tracking refs (origin/<branch>) and tags.
+  git -C "${TARGET_DIR}" fetch --tags --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
+  # Also fetch the explicit ref in case it is a commit SHA or odd ref name.
+  git -C "${TARGET_DIR}" fetch --tags origin "${REF}" || true
+}
+
+# Resolve REF to a commit after fetch. Prefer origin/<ref> for branches so
+# --update actually moves past a stale local branch tip.
+resolve_commit() {
+  if git -C "${TARGET_DIR}" rev-parse --verify --quiet "refs/remotes/origin/${REF}^{commit}" >/dev/null; then
+    git -C "${TARGET_DIR}" rev-parse "refs/remotes/origin/${REF}^{commit}"
     return
   fi
-  if git -C "${TARGET_DIR}" show-ref --verify --quiet "refs/tags/${REF}"; then
-    git -C "${TARGET_DIR}" checkout -q "${REF}"
-    return
-  fi
-  if git -C "${TARGET_DIR}" show-ref --verify --quiet "refs/remotes/origin/${REF}"; then
-    git -C "${TARGET_DIR}" checkout -q --detach "origin/${REF}"
+  if git -C "${TARGET_DIR}" rev-parse --verify --quiet "refs/tags/${REF}^{commit}" >/dev/null; then
+    git -C "${TARGET_DIR}" rev-parse "refs/tags/${REF}^{commit}"
     return
   fi
   if git -C "${TARGET_DIR}" rev-parse --verify --quiet "${REF}^{commit}" >/dev/null; then
-    git -C "${TARGET_DIR}" checkout -q --detach "${REF}"
+    git -C "${TARGET_DIR}" rev-parse "${REF}^{commit}"
     return
   fi
   echo "Could not resolve ampliseq ref: ${REF}" >&2
   exit 1
 }
 
-fetch_ref() {
-  git -C "${TARGET_DIR}" fetch --tags origin "${REF}" 2>/dev/null \
-    || git -C "${TARGET_DIR}" fetch --tags origin
+checkout_ref() {
+  local commit
+  commit="$(resolve_commit)"
+  if git -C "${TARGET_DIR}" show-ref --verify --quiet "refs/remotes/origin/${REF}"; then
+    # Keep a local branch named after the remote branch, forced to the fetched tip.
+    git -C "${TARGET_DIR}" checkout -q -B "${REF}" "${commit}"
+  else
+    git -C "${TARGET_DIR}" checkout -q --detach "${commit}"
+  fi
 }
 
 if [[ ! -d "${TARGET_DIR}/.git" ]]; then
