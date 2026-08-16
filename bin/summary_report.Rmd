@@ -2,9 +2,10 @@
 title: "eDNA pipeline summary"
 output:
   html_document:
-    theme: null
-    highlight: null
+    theme: flatly
+    highlight: tango
     toc: false
+    df_print: kable
 params:
   report: null
 ---
