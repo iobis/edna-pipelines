@@ -54,8 +54,13 @@ results/
 │   └── ampliseq.done
 └── darwincore/
     ├── worms/
-    └── publishing/
+    ├── publishing/
+    └── report/
+        ├── summary_report.html
+        └── report_params.tsv
 ```
+
+The HTML summary covers run parameters, unmatched WoRMS names, and SINTAX vs VSEARCH name agreement. It needs host R with `rmarkdown` (`install.packages("rmarkdown")`).
 
 ## Tests
 
@@ -69,3 +74,4 @@ After a pipeline run, use VS Code launch configs in `.vscode/launch.json`:
 
 - **Debug build_darwin_core (local results)** — `bin/build_darwin_core.py`
 - **Debug worms_match (vsearch)** — `bin/worms_match.py` on `results/ampliseq/vsearch_lca/ASV_tax_vsearch_lca.user.tsv`
+- **Render summary report (local results)** — R Debugger on `bin/debug_render_summary_report.R`; set breakpoints in `bin/summary_report.R` (needs [R Debugger](https://marketplace.visualstudio.com/items?itemName=RDebugger.r-debugger) + `vscDebugger`)

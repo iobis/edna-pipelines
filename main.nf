@@ -58,6 +58,11 @@ workflow {
     WORMS_MATCH(channel.of('sintax', 'vsearch'), ampliseq_done_ch, darwincore_outdir_ch)
     BUILD_DARWIN_CORE(WORMS_MATCH.out.worms.collect(), darwincore_outdir_ch)
     WORMS_MATCH_OCCURRENCE(BUILD_DARWIN_CORE.out.publishing, darwincore_outdir_ch)
+    SUMMARY_REPORT(
+        WORMS_MATCH.out.worms.filter { method, _path -> method == 'sintax' }.map { _method, path -> path },
+        WORMS_MATCH.out.worms.filter { method, _path -> method == 'vsearch' }.map { _method, path -> path },
+        darwincore_outdir_ch
+    )
 }
 
 process RUN_AMPLISEQ {
@@ -183,5 +188,63 @@ process WORMS_MATCH_OCCURRENCE {
     if [ "${publishing_in}" != "publishing" ]; then
       ln -sfn ${publishing_in} publishing
     fi
+    """
+}
+
+process SUMMARY_REPORT {
+    tag 'summary'
+    publishDir { "${darwincore_outdir}/report" }, mode: 'copy', overwrite: true
+
+    input:
+    path sintax_tsv
+    path vsearch_tsv
+    val darwincore_outdir
+
+    output:
+    path 'summary_report.html', emit: report
+    path 'report_params.tsv', emit: params
+
+    script:
+    def revision_path = "${params.ampliseq_results}/ampliseq.revision"
+    def revision_flag = new File(revision_path.toString()).isFile()
+        ? "--revision '${revision_path}'"
+        : ''
+    """
+    set -euo pipefail
+    cat > report_params.tsv <<'EOF'
+parameter	value
+outdir	${params.outdir}
+ampliseq_results	${params.ampliseq_results}
+darwincore_outdir	${darwincore_outdir}
+metadata	${params.metadata}
+worms_db	${params.worms_db}
+run_ampliseq	${params.run_ampliseq}
+ampliseq_repo	${params.ampliseq_repo ?: ''}
+ampliseq_ref	${params.ampliseq_ref ?: ''}
+ampliseq_update	${params.ampliseq_update ?: false}
+sequencing_type	${params.sequencing_type ?: ''}
+skip_cutadapt	${params.skip_cutadapt ?: false}
+skip_dada_taxonomy	${params.skip_dada_taxonomy ?: false}
+skip_phyloseq	${params.skip_phyloseq ?: false}
+skip_tse	${params.skip_tse ?: false}
+sintax_ref_tax_custom	${params.sintax_ref_tax_custom ?: ''}
+sintax_assign_taxlevels	${params.sintax_assign_taxlevels ?: ''}
+vsearch_lca_ref_tax_custom	${params.vsearch_lca_ref_tax_custom ?: ''}
+vsearch_lca_assign_taxlevels	${params.vsearch_lca_assign_taxlevels ?: ''}
+vsearch_lca_id	${params.vsearch_lca_id ?: ''}
+vsearch_lca_maxaccepts	${params.vsearch_lca_maxaccepts ?: ''}
+vsearch_lca_maxrejects	${params.vsearch_lca_maxrejects ?: ''}
+vsearch_lca_lca_cutoff	${params.vsearch_lca_lca_cutoff ?: ''}
+clean_prefix	${params.clean_prefix ?: false}
+EOF
+    cp "${projectDir}/bin/summary_report.Rmd" summary_report.Rmd
+    cp "${projectDir}/bin/summary_report.R" summary_report.R
+    Rscript "${projectDir}/bin/render_summary_report.R" \\
+      --sintax "\${PWD}/${sintax_tsv}" \\
+      --vsearch "\${PWD}/${vsearch_tsv}" \\
+      --params "\${PWD}/report_params.tsv" \\
+      --output "\${PWD}/summary_report.html" \\
+      --rmd "\${PWD}/summary_report.Rmd" \\
+      ${revision_flag}
     """
 }

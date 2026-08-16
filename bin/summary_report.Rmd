@@ -1,0 +1,53 @@
+---
+title: "eDNA pipeline summary"
+output:
+  html_document:
+    theme: null
+    highlight: null
+    toc: false
+params:
+  report: null
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+report <- params$report
+```
+
+## Parameters
+
+```{r parameters}
+if (is.null(report$parameters)) {
+  cat("No parameters file provided.\n")
+} else {
+  knitr::kable(report$parameters, col.names = c("Parameter", "Value"))
+}
+
+if (!is.null(report$revision_text) && nzchar(report$revision_text)) {
+  cat("\n\n### Ampliseq revision\n\n```\n")
+  cat(report$revision_text)
+  cat("\n```\n")
+}
+```
+
+## Unmatched WoRMS names
+
+ASVs with at least one rank assigned but no `scientificNameID`. Unique query names (finest filled rank):
+
+```{r unmatched}
+cat(report$unmatched_summary, "\n\n")
+if (nrow(report$unmatched) == 0) {
+  cat("None.\n")
+} else {
+  knitr::kable(report$unmatched)
+}
+```
+
+## SINTAX vs VSEARCH name agreement
+
+Per-rank comparison on shared `ASV_ID`s (case-insensitive).
+
+```{r agreement}
+knitr::kable(report$agreement)
+cat("\n", report$finest_summary, "\n", sep = "")
+```
