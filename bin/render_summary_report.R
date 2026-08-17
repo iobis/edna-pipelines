@@ -42,8 +42,7 @@ render_summary_report <- function(
     vsearch,
     params_tsv,
     output,
-    rmd,
-    revision = NULL
+    rmd
 ) {
   if (!requireNamespace("rmarkdown", quietly = TRUE)) {
     stop("Package 'rmarkdown' is required. Install with install.packages('rmarkdown').", call. = FALSE)
@@ -55,18 +54,11 @@ render_summary_report <- function(
   vsearch <- abs_path(vsearch, "vsearch")
   params_tsv <- abs_path(params_tsv, "params")
   rmd <- abs_path(rmd, "rmd")
-  revision_path <- if (!is.null(revision) && nzchar(revision) && file.exists(revision)) {
-    abs_path(revision, "revision")
-  } else {
-    NULL
-  }
 
-  # Compute everything here so breakpoints in summary_report.R work.
   report <- build_summary_report(
     sintax_tsv = sintax,
     vsearch_tsv = vsearch,
-    params_tsv = params_tsv,
-    revision_file = revision_path
+    params_tsv = params_tsv
   )
 
   if (dirname(output) == ".") {
@@ -96,7 +88,7 @@ parse_render_args <- function(args = commandArgs(trailingOnly = TRUE)) {
   usage <- function() {
     message(
       "Usage: render_summary_report.R ",
-      "--sintax PATH --vsearch PATH --params PATH --output PATH [--revision PATH] [--rmd PATH]"
+      "--sintax PATH --vsearch PATH --params PATH --output PATH [--rmd PATH]"
     )
   }
 
@@ -129,7 +121,6 @@ parse_render_args <- function(args = commandArgs(trailingOnly = TRUE)) {
     vsearch = get_opt("--vsearch"),
     params_tsv = get_opt("--params"),
     output = get_opt("--output"),
-    revision = get_opt("--revision", required = FALSE),
     rmd = rmd
   )
 }
@@ -142,7 +133,6 @@ if (!isTRUE(getOption("edna.skip_render_cli"))) {
     vsearch = opts$vsearch,
     params_tsv = opts$params_tsv,
     output = opts$output,
-    rmd = opts$rmd,
-    revision = opts$revision
+    rmd = opts$rmd
   )
 }

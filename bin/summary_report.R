@@ -1,5 +1,3 @@
-# Summary report analysis helpers (debuggable from R Debugger).
-
 TAX_RANKS <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
 TAX_PLACEHOLDERS <- c("", "na", "n/a", "unassigned")
 
@@ -40,11 +38,56 @@ read_parameters_table <- function(path) {
   read.delim(path, sep = "\t", stringsAsFactors = FALSE, quote = "")
 }
 
-read_revision_text <- function(path) {
+param_value <- function(params, name) {
+  if (is.null(params) || !"parameter" %in% names(params)) {
+    return(NULL)
+  }
+  rows <- params$parameter == name
+  if (!any(rows)) {
+    return(NULL)
+  }
+  value <- params$value[which(rows)[1]]
+  if (is.na(value) || !nzchar(value)) {
+    return(NULL)
+  }
+  value
+}
+
+ampliseq_revision_path <- function(params) {
+  ampliseq_results <- param_value(params, "ampliseq_results")
+  if (is.null(ampliseq_results)) {
+    return(NULL)
+  }
+  file.path(ampliseq_results, "ampliseq.revision")
+}
+
+read_revision_table <- function(path) {
   if (is.null(path) || !nzchar(path) || !file.exists(path)) {
     return(NULL)
   }
-  paste(readLines(path, warn = FALSE), collapse = "\n")
+  lines <- readLines(path, warn = FALSE)
+  lines <- trimws(lines[nzchar(trimws(lines))])
+  if (length(lines) == 0) {
+    return(NULL)
+  }
+  parts <- strsplit(lines, "=", fixed = TRUE)
+  keys <- vapply(parts, function(x) x[[1]], character(1))
+  values <- vapply(parts, function(x) paste(x[-1], collapse = "="), character(1))
+  data.frame(property = keys, value = values, stringsAsFactors = FALSE)
+}
+
+revision_section <- function(params) {
+  path <- ampliseq_revision_path(params)
+  revision <- read_revision_table(path)
+  if (!is.null(revision)) {
+    return(list(revision = revision, revision_message = NULL))
+  }
+  message <- if (is.null(path)) {
+    "ampliseq_results was not recorded in report parameters; ampliseq version is unavailable."
+  } else {
+    sprintf("ampliseq.revision not found at %s.", path)
+  }
+  list(revision = NULL, revision_message = message)
 }
 
 unmatched_names_table <- function(df, method, ranks = TAX_RANKS) {
@@ -61,13 +104,18 @@ unmatched_names_table <- function(df, method, ranks = TAX_RANKS) {
   data.frame(method = method, name = names_u, stringsAsFactors = FALSE)
 }
 
-unmatched_summary_text <- function(sintax, vsearch, unmatched, ranks = TAX_RANKS) {
-  sprintf(
-    "SINTAX: %d ASVs unmatched (%d unique names). VSEARCH: %d ASVs unmatched (%d unique names).",
-    sum(has_taxonomy(sintax, ranks = ranks) & !nzchar(sintax$scientificNameID)),
-    sum(unmatched$method == "sintax"),
-    sum(has_taxonomy(vsearch, ranks = ranks) & !nzchar(vsearch$scientificNameID)),
-    sum(unmatched$method == "vsearch")
+unmatched_summary_table <- function(sintax, vsearch, unmatched, ranks = TAX_RANKS) {
+  data.frame(
+    method = c("sintax", "vsearch"),
+    asvs = c(
+      sum(has_taxonomy(sintax, ranks = ranks) & !nzchar(sintax$scientificNameID)),
+      sum(has_taxonomy(vsearch, ranks = ranks) & !nzchar(vsearch$scientificNameID))
+    ),
+    names = c(
+      sum(unmatched$method == "sintax"),
+      sum(unmatched$method == "vsearch")
+    ),
+    stringsAsFactors = FALSE
   )
 }
 
@@ -99,26 +147,26 @@ agreement_by_rank <- function(sintax, vsearch, ranks = TAX_RANKS) {
   )
 }
 
-finest_agreement_text <- function(sintax_aligned, vsearch_aligned, ranks = TAX_RANKS) {
-  s_fine <- vapply(
-    seq_len(nrow(sintax_aligned)),
-    function(i) tolower(finest_name(sintax_aligned[i, , drop = FALSE], ranks = ranks)),
-    character(1)
+sintax_species_change_text <- function(sintax, vsearch) {
+  v_idx <- match(sintax$ASV_ID, vsearch$ASV_ID)
+  s_species <- sintax$Species
+  s_genus <- sintax$Genus
+  v_species <- ifelse(is.na(v_idx), "", vsearch$Species[v_idx])
+  v_genus <- ifelse(is.na(v_idx), "", vsearch$Genus[v_idx])
+
+  genera_agree <- nzchar(s_genus) & nzchar(v_genus) & tolower(s_genus) == tolower(v_genus)
+  v_accepted <- ifelse(nzchar(v_species) & genera_agree, v_species, "")
+
+  has_sintax_species <- nzchar(s_species)
+  n_removed <- sum(has_sintax_species & !nzchar(v_accepted))
+  n_updated <- sum(
+    has_sintax_species & nzchar(v_accepted) & tolower(s_species) != tolower(v_accepted)
   )
-  v_fine <- vapply(
-    seq_len(nrow(vsearch_aligned)),
-    function(i) tolower(finest_name(vsearch_aligned[i, , drop = FALSE], ranks = ranks)),
-    character(1)
-  )
-  both_fine <- nzchar(s_fine) & nzchar(v_fine)
+
   sprintf(
-    "Finest name (any rank): %d same, %d different, %d only SINTAX, %d only VSEARCH, %d neither (of %d shared ASVs).",
-    sum(both_fine & s_fine == v_fine),
-    sum(both_fine & s_fine != v_fine),
-    sum(nzchar(s_fine) & !nzchar(v_fine)),
-    sum(!nzchar(s_fine) & nzchar(v_fine)),
-    sum(!nzchar(s_fine) & !nzchar(v_fine)),
-    nrow(sintax_aligned)
+    "%d SINTAX species names were removed and %d were updated because VSEARCH did not agree.",
+    n_removed,
+    n_updated
   )
 }
 
@@ -127,9 +175,11 @@ build_summary_report <- function(
     sintax_tsv,
     vsearch_tsv,
     params_tsv = NULL,
-    revision_file = NULL,
     ranks = TAX_RANKS
 ) {
+  parameters <- read_parameters_table(params_tsv)
+  revision_info <- revision_section(parameters)
+
   sintax <- read_tax(sintax_tsv, ranks = ranks)
   vsearch <- read_tax(vsearch_tsv, ranks = ranks)
 
@@ -140,12 +190,13 @@ build_summary_report <- function(
   agreement <- agreement_by_rank(sintax, vsearch, ranks = ranks)
 
   list(
-    parameters = read_parameters_table(params_tsv),
-    revision_text = read_revision_text(revision_file),
+    parameters = parameters,
+    revision = revision_info$revision,
+    revision_message = revision_info$revision_message,
     unmatched = unmatched,
-    unmatched_summary = unmatched_summary_text(sintax, vsearch, unmatched, ranks = ranks),
+    unmatched_summary = unmatched_summary_table(sintax, vsearch, unmatched, ranks = ranks),
     agreement = agreement$by_rank,
-    finest_summary = finest_agreement_text(agreement$sintax, agreement$vsearch, ranks = ranks),
+    sintax_species_changes = sintax_species_change_text(sintax, vsearch),
     n_sintax = nrow(sintax),
     n_vsearch = nrow(vsearch),
     n_shared = length(agreement$shared_ids)

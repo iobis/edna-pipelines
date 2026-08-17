@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 report <- params$report
 ```
 
-## Parameters
+## Pipeline parameters
 
 ```{r parameters}
 if (is.null(report$parameters)) {
@@ -23,11 +23,15 @@ if (is.null(report$parameters)) {
 } else {
   knitr::kable(report$parameters, col.names = c("Parameter", "Value"))
 }
+```
 
-if (!is.null(report$revision_text) && nzchar(report$revision_text)) {
-  cat("\n\n### Ampliseq revision\n\n```\n")
-  cat(report$revision_text)
-  cat("\n```\n")
+## ampliseq version
+
+```{r revision}
+if (!is.null(report$revision)) {
+  knitr::kable(report$revision, col.names = c("Property", "Value"))
+} else {
+  cat(report$revision_message, "\n")
 }
 ```
 
@@ -36,19 +40,25 @@ if (!is.null(report$revision_text) && nzchar(report$revision_text)) {
 ASVs with at least one rank assigned but no `scientificNameID`. Unique query names (finest filled rank):
 
 ```{r unmatched}
-cat(report$unmatched_summary, "\n\n")
+knitr::kable(report$unmatched_summary, col.names = c("Method", "ASVs", "Names"))
 if (nrow(report$unmatched) == 0) {
-  cat("None.\n")
+  cat("\n\nNone.\n")
 } else {
-  knitr::kable(report$unmatched)
+  DT::datatable(
+    report$unmatched,
+    colnames = c("Method", "Name"),
+    options = list(pageLength = 10, dom = "tip"),
+    rownames = FALSE
+  )
 }
 ```
 
 ## SINTAX vs VSEARCH name agreement
 
-Per-rank comparison on shared `ASV_ID`s (case-insensitive).
+`r report$sintax_species_changes`
+
+Per-rank comparison on shared ASV IDs.
 
 ```{r agreement}
 knitr::kable(report$agreement)
-cat("\n", report$finest_summary, "\n", sep = "")
 ```

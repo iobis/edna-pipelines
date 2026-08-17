@@ -13,6 +13,5 @@ render_summary_report(
   vsearch = file.path(root, "results/darwincore/worms/vsearch/worms_matched.vsearch.tsv"),
   params_tsv = file.path(root, "results/darwincore/report/report_params.tsv"),
   output = file.path(root, "results/darwincore/report/summary_report.html"),
-  rmd = file.path(root, "bin/summary_report.Rmd"),
-  revision = file.path(root, "results/ampliseq/ampliseq.revision")
+  rmd = file.path(root, "bin/summary_report.Rmd")
 )

@@ -205,10 +205,6 @@ process SUMMARY_REPORT {
     path 'report_params.tsv', emit: params
 
     script:
-    def revision_path = "${params.ampliseq_results}/ampliseq.revision"
-    def revision_flag = new File(revision_path.toString()).isFile()
-        ? "--revision '${revision_path}'"
-        : ''
     """
     set -euo pipefail
     cat > report_params.tsv <<'EOF'
@@ -244,7 +240,6 @@ EOF
       --vsearch "\${PWD}/${vsearch_tsv}" \\
       --params "\${PWD}/report_params.tsv" \\
       --output "\${PWD}/summary_report.html" \\
-      --rmd "\${PWD}/summary_report.Rmd" \\
-      ${revision_flag}
+      --rmd "\${PWD}/summary_report.Rmd"
     """
 }

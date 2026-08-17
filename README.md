@@ -28,6 +28,8 @@ nextflow run main.nf -profile docker \
   --outdir results
 ```
 
+`-profile docker` is only for the nested nf-core/ampliseq run. WoRMS matching, Darwin Core, and the HTML summary still run on the host (Python 3 and R with `rmarkdown` + `DT`).
+
 ### nf-core/ampliseq source
 
 Defaults: `--ampliseq_repo https://github.com/nf-core/ampliseq.git`, `--ampliseq_ref dev`, `--ampliseq_update false`.
@@ -60,7 +62,7 @@ results/
         └── report_params.tsv
 ```
 
-The HTML summary covers run parameters, unmatched WoRMS names, and SINTAX vs VSEARCH name agreement. It needs host R with `rmarkdown` (`install.packages("rmarkdown")`).
+The HTML summary covers run parameters, unmatched WoRMS names, and SINTAX vs VSEARCH name agreement.
 
 ## Tests
 
