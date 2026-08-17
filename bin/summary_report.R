@@ -90,32 +90,86 @@ revision_section <- function(params) {
   list(revision = NULL, revision_message = message)
 }
 
-unmatched_names_table <- function(df, method, ranks = TAX_RANKS) {
-  unmatched <- has_taxonomy(df, ranks = ranks) & !nzchar(df$scientificNameID)
-  names_u <- vapply(
-    which(unmatched),
+unmatched_mask <- function(df, ranks = TAX_RANKS) {
+  has_taxonomy(df, ranks = ranks) & !nzchar(df$scientificNameID)
+}
+
+row_finest_names <- function(df, ranks = TAX_RANKS) {
+  if (nrow(df) == 0) {
+    return(character())
+  }
+  vapply(
+    seq_len(nrow(df)),
     function(i) finest_name(df[i, , drop = FALSE], ranks = ranks),
     character(1)
   )
-  names_u <- sort(unique(names_u[nzchar(names_u)]))
-  if (length(names_u) == 0) {
-    return(data.frame(method = character(), name = character(), stringsAsFactors = FALSE))
-  }
-  data.frame(method = method, name = names_u, stringsAsFactors = FALSE)
 }
 
-unmatched_summary_table <- function(sintax, vsearch, unmatched, ranks = TAX_RANKS) {
-  data.frame(
-    method = c("sintax", "vsearch"),
-    asvs = c(
-      sum(has_taxonomy(sintax, ranks = ranks) & !nzchar(sintax$scientificNameID)),
-      sum(has_taxonomy(vsearch, ranks = ranks) & !nzchar(vsearch$scientificNameID))
+unmatched_names_table <- function(sintax, vsearch, ranks = TAX_RANKS) {
+  s <- sintax[unmatched_mask(sintax, ranks), , drop = FALSE]
+  v <- vsearch[unmatched_mask(vsearch, ranks), , drop = FALSE]
+  pairs <- rbind(
+    data.frame(
+      asv = s$ASV_ID,
+      name = row_finest_names(s, ranks = ranks),
+      stringsAsFactors = FALSE
     ),
-    names = c(
-      sum(unmatched$method == "sintax"),
-      sum(unmatched$method == "vsearch")
-    ),
-    stringsAsFactors = FALSE
+    data.frame(
+      asv = v$ASV_ID,
+      name = row_finest_names(v, ranks = ranks),
+      stringsAsFactors = FALSE
+    )
+  )
+  pairs <- pairs[nzchar(pairs$name), , drop = FALSE]
+  if (nrow(pairs) == 0) {
+    return(data.frame(name = character(), asvs = integer(), stringsAsFactors = FALSE))
+  }
+  pairs <- unique(pairs)
+  counts <- as.data.frame(table(pairs$name), stringsAsFactors = FALSE)
+  names(counts) <- c("name", "asvs")
+  counts[order(counts$name), ]
+}
+
+fmt_pct <- function(n, d) {
+  if (d == 0) {
+    return("0%")
+  }
+  sprintf("%.1f%%", 100 * n / d)
+}
+
+unmatched_summary_text <- function(sintax, vsearch, ranks = TAX_RANKS) {
+  unmatched_asvs <- unique(c(
+    sintax$ASV_ID[unmatched_mask(sintax, ranks)],
+    vsearch$ASV_ID[unmatched_mask(vsearch, ranks)]
+  ))
+  tax_asvs <- unique(c(
+    sintax$ASV_ID[has_taxonomy(sintax, ranks)],
+    vsearch$ASV_ID[has_taxonomy(vsearch, ranks)]
+  ))
+  unmatched_names <- unique(c(
+    row_finest_names(sintax[unmatched_mask(sintax, ranks), , drop = FALSE], ranks = ranks),
+    row_finest_names(vsearch[unmatched_mask(vsearch, ranks), , drop = FALSE], ranks = ranks)
+  ))
+  unmatched_names <- unmatched_names[nzchar(unmatched_names)]
+  tax_names <- unique(c(
+    row_finest_names(sintax[has_taxonomy(sintax, ranks), , drop = FALSE], ranks = ranks),
+    row_finest_names(vsearch[has_taxonomy(vsearch, ranks), , drop = FALSE], ranks = ranks)
+  ))
+  tax_names <- tax_names[nzchar(tax_names)]
+
+  n_asv <- length(unmatched_asvs)
+  n_asv_total <- length(tax_asvs)
+  n_name <- length(unmatched_names)
+  n_name_total <- length(tax_names)
+
+  sprintf(
+    "%d of %d ASVs (%s) and %d of %d names (%s) could not be matched to WoRMS.",
+    n_asv,
+    n_asv_total,
+    fmt_pct(n_asv, n_asv_total),
+    n_name,
+    n_name_total,
+    fmt_pct(n_name, n_name_total)
   )
 }
 
@@ -183,10 +237,7 @@ build_summary_report <- function(
   sintax <- read_tax(sintax_tsv, ranks = ranks)
   vsearch <- read_tax(vsearch_tsv, ranks = ranks)
 
-  unmatched <- rbind(
-    unmatched_names_table(sintax, "sintax", ranks = ranks),
-    unmatched_names_table(vsearch, "vsearch", ranks = ranks)
-  )
+  unmatched <- unmatched_names_table(sintax, vsearch, ranks = ranks)
   agreement <- agreement_by_rank(sintax, vsearch, ranks = ranks)
 
   list(
@@ -194,7 +245,7 @@ build_summary_report <- function(
     revision = revision_info$revision,
     revision_message = revision_info$revision_message,
     unmatched = unmatched,
-    unmatched_summary = unmatched_summary_table(sintax, vsearch, unmatched, ranks = ranks),
+    unmatched_summary = unmatched_summary_text(sintax, vsearch, ranks = ranks),
     agreement = agreement$by_rank,
     sintax_species_changes = sintax_species_change_text(sintax, vsearch),
     n_sintax = nrow(sintax),

@@ -15,6 +15,26 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 report <- params$report
 ```
 
+```{css echo=FALSE}
+.report-highlight {
+  display: inline;
+  background-color: rgba(24, 188, 156, 0.35);
+  color: inherit;
+  padding: 0.05em 0.2em;
+  border-radius: 0;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.ampliseq-report-link {
+  margin: 0 0 1.25rem;
+}
+```
+
+<p class="ampliseq-report-link">
+This pipeline builds on nf-core/ampliseq,
+<a href="../../ampliseq/summary_report/summary_report.html" target="_blank">view the ampliseq summary report here</a>.
+</p>
+
 ## Pipeline parameters
 
 ```{r parameters}
@@ -39,14 +59,15 @@ if (!is.null(report$revision)) {
 
 ASVs with at least one rank assigned but no `scientificNameID`. Unique query names (finest filled rank):
 
+<p><span class="report-highlight">`r report$unmatched_summary`</span></p>
+
 ```{r unmatched}
-knitr::kable(report$unmatched_summary, col.names = c("Method", "ASVs", "Names"))
 if (nrow(report$unmatched) == 0) {
-  cat("\n\nNone.\n")
+  cat("None.\n")
 } else {
   DT::datatable(
     report$unmatched,
-    colnames = c("Method", "Name"),
+    colnames = c("Name", "ASVs"),
     options = list(pageLength = 10, dom = "tip"),
     rownames = FALSE
   )
@@ -55,7 +76,7 @@ if (nrow(report$unmatched) == 0) {
 
 ## SINTAX vs VSEARCH name agreement
 
-`r report$sintax_species_changes`
+<p><span class="report-highlight">`r report$sintax_species_changes`</span></p>
 
 Per-rank comparison on shared ASV IDs.
 
