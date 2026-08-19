@@ -4,7 +4,8 @@ output:
   html_document:
     theme: flatly
     highlight: tango
-    toc: false
+    toc: true
+    toc_float: true
     df_print: kable
 params:
   report: null
