@@ -224,15 +224,89 @@ sintax_species_change_text <- function(sintax, vsearch) {
   )
 }
 
+classification_rate_by_rank <- function(occurrence_path, ranks = tolower(TAX_RANKS)) {
+  if (is.null(occurrence_path) || !file.exists(occurrence_path)) {
+    return(NULL)
+  }
+  occ <- read.delim(occurrence_path, sep = "\t", stringsAsFactors = FALSE,
+                     check.names = FALSE, quote = "")
+  # Extract ASV ID from occurrenceID (format: sampleid_asvhash)
+  occ$asv_id <- sub(".*_", "", occ$occurrenceID)
+  occ_dedup <- occ[!duplicated(occ$asv_id), , drop = FALSE]
+  n_total <- nrow(occ_dedup)
+  if (n_total == 0) {
+    return(NULL)
+  }
+  pcts <- vapply(ranks, function(rank) {
+    if (!rank %in% names(occ_dedup)) return(0)
+    sum(nzchar(trimws(occ_dedup[[rank]]))) / n_total * 100
+  }, numeric(1))
+  data.frame(
+    rank = factor(rev(names(pcts)), levels = rev(names(pcts))),
+    classified = round(rev(pcts), 1),
+    stringsAsFactors = FALSE
+  )
+}
+
+taxonomy_sunburst_data <- function(occurrence_path, ranks = tolower(TAX_RANKS)) {
+  if (is.null(occurrence_path) || !file.exists(occurrence_path)) {
+    return(NULL)
+  }
+  occ <- read.delim(occurrence_path, sep = "\t", stringsAsFactors = FALSE,
+                     check.names = FALSE, quote = "")
+  occ$asv_id <- sub(".*_", "", occ$occurrenceID)
+  occ_dedup <- occ[!duplicated(occ$asv_id), , drop = FALSE]
+  ranks <- intersect(ranks, names(occ_dedup))
+  if (length(ranks) == 0 || nrow(occ_dedup) == 0) return(NULL)
+
+  for (r in ranks) {
+    occ_dedup[[r]] <- trimws(occ_dedup[[r]])
+    occ_dedup[[r]] <- sub("_[0-9]+$", "", occ_dedup[[r]])
+    occ_dedup[[r]][!nzchar(occ_dedup[[r]])] <- NA
+  }
+
+  rows <- list()
+  for (depth in seq_along(ranks)) {
+    r <- ranks[depth]
+    parent_r <- if (depth == 1) NULL else ranks[depth - 1]
+    cols <- ranks[seq_len(depth)]
+    sub <- occ_dedup[!is.na(occ_dedup[[r]]), cols, drop = FALSE]
+    if (nrow(sub) == 0) next
+    agg <- aggregate(rep(1, nrow(sub)), by = lapply(cols, function(c) sub[[c]]), FUN = sum)
+    names(agg) <- c(cols, "n")
+    agg$label <- agg[[r]]
+    if (is.null(parent_r)) {
+      agg$id <- agg[[r]]
+      agg$parent <- ""
+    } else {
+      agg$id <- apply(agg[cols], 1, paste, collapse = " - ")
+      agg$parent <- apply(agg[, cols[-length(cols)], drop = FALSE], 1, paste, collapse = " - ")
+    }
+    rows[[depth]] <- agg[, c("id", "label", "parent", "n"), drop = FALSE]
+  }
+  do.call(rbind, rows)
+}
+
 #' Build all summary-report tables/text (call this under the debugger).
 build_summary_report <- function(
     sintax_tsv,
     vsearch_tsv,
     params_tsv = NULL,
+    occurrence_tsv = NULL,
     ranks = TAX_RANKS
 ) {
   parameters <- read_parameters_table(params_tsv)
   revision_info <- revision_section(parameters)
+
+  if (is.null(occurrence_tsv)) {
+    darwincore_outdir <- param_value(parameters, "darwincore_outdir")
+    if (!is.null(darwincore_outdir)) {
+      candidate <- file.path(darwincore_outdir, "publishing", "occurrence.tsv")
+      if (file.exists(candidate)) {
+        occurrence_tsv <- candidate
+      }
+    }
+  }
 
   sintax <- read_tax(sintax_tsv, ranks = ranks)
   vsearch <- read_tax(vsearch_tsv, ranks = ranks)
@@ -248,6 +322,8 @@ build_summary_report <- function(
     unmatched_summary = unmatched_summary_text(sintax, vsearch, ranks = ranks),
     agreement = agreement$by_rank,
     sintax_species_changes = sintax_species_change_text(sintax, vsearch),
+    classification_rate = classification_rate_by_rank(occurrence_tsv),
+    sunburst = taxonomy_sunburst_data(occurrence_tsv),
     n_sintax = nrow(sintax),
     n_vsearch = nrow(vsearch),
     n_shared = length(agreement$shared_ids)
