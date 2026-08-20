@@ -1,3 +1,8 @@
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(purrr)
+
 TAX_RANKS <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
 TAX_PLACEHOLDERS <- c("", "na", "n/a", "unassigned")
 
@@ -5,52 +10,71 @@ is_assigned <- function(x) {
   !is.na(x) & !(tolower(trimws(as.character(x))) %in% TAX_PLACEHOLDERS)
 }
 
-finest_name <- function(row, ranks = TAX_RANKS) {
-  for (rank in rev(ranks)) {
-    val <- as.character(row[[rank]])
-    if (nzchar(val)) return(val)
+blank_to_na <- function(x) {
+  x <- trimws(as.character(x))
+  x[!nzchar(x) | is.na(x)] <- NA_character_
+  x
+}
+
+finest_name <- function(df, ranks = TAX_RANKS) {
+  if (nrow(df) == 0) {
+    return(character())
   }
-  ""
+  vals <- lapply(ranks, function(rank) blank_to_na(df[[rank]]))
+  names(vals) <- ranks
+  coalesce(!!!rev(vals))
+}
+
+read_tsv_safe <- function(path) {
+  read.delim(path, sep = "\t", stringsAsFactors = FALSE, check.names = FALSE, quote = "")
 }
 
 read_tax <- function(path, ranks = TAX_RANKS) {
-  df <- read.delim(path, sep = "\t", stringsAsFactors = FALSE, check.names = FALSE, quote = "")
+  df <- as_tibble(read_tsv_safe(path))
   for (rank in ranks) {
-    if (!rank %in% names(df)) df[[rank]] <- ""
+    if (!rank %in% names(df)) {
+      df[[rank]] <- ""
+    }
     df[[rank]] <- ifelse(is_assigned(df[[rank]]), trimws(df[[rank]]), "")
   }
-  if (!"ASV_ID" %in% names(df)) stop("ASV_ID column missing in ", path)
-  if (!"scientificNameID" %in% names(df)) df$scientificNameID <- ""
-  if (!"scientificName" %in% names(df)) df$scientificName <- ""
-  df$scientificNameID <- trimws(as.character(df$scientificNameID))
-  df$scientificName <- trimws(as.character(df$scientificName))
-  df
+  if (!"ASV_ID" %in% names(df)) {
+    stop("ASV_ID column missing in ", path, call. = FALSE)
+  }
+  if (!"scientificNameID" %in% names(df)) {
+    df$scientificNameID <- ""
+  }
+  if (!"scientificName" %in% names(df)) {
+    df$scientificName <- ""
+  }
+  df %>%
+    mutate(
+      scientificNameID = trimws(as.character(.data$scientificNameID)),
+      scientificName = trimws(as.character(.data$scientificName))
+    )
 }
 
 has_taxonomy <- function(df, ranks = TAX_RANKS) {
-  apply(df[ranks], 1, function(r) any(nzchar(r)))
+  Reduce(`|`, lapply(ranks, function(rank) nzchar(df[[rank]])))
 }
 
 read_parameters_table <- function(path) {
   if (is.null(path) || !nzchar(path) || !file.exists(path)) {
     return(NULL)
   }
-  read.delim(path, sep = "\t", stringsAsFactors = FALSE, quote = "")
+  as_tibble(read_tsv_safe(path))
 }
 
 param_value <- function(params, name) {
   if (is.null(params) || !"parameter" %in% names(params)) {
     return(NULL)
   }
-  rows <- params$parameter == name
-  if (!any(rows)) {
+  value <- params %>%
+    filter(.data$parameter == !!name) %>%
+    pull(.data$value)
+  if (length(value) == 0 || is.na(value[[1]]) || !nzchar(value[[1]])) {
     return(NULL)
   }
-  value <- params$value[which(rows)[1]]
-  if (is.na(value) || !nzchar(value)) {
-    return(NULL)
-  }
-  value
+  value[[1]]
 }
 
 ampliseq_revision_path <- function(params) {
@@ -65,15 +89,20 @@ read_revision_table <- function(path) {
   if (is.null(path) || !nzchar(path) || !file.exists(path)) {
     return(NULL)
   }
-  lines <- readLines(path, warn = FALSE)
-  lines <- trimws(lines[nzchar(trimws(lines))])
+  lines <- trimws(readLines(path, warn = FALSE))
+  lines <- lines[nzchar(lines)]
   if (length(lines) == 0) {
     return(NULL)
   }
-  parts <- strsplit(lines, "=", fixed = TRUE)
-  keys <- vapply(parts, function(x) x[[1]], character(1))
-  values <- vapply(parts, function(x) paste(x[-1], collapse = "="), character(1))
-  data.frame(property = keys, value = values, stringsAsFactors = FALSE)
+  tibble(line = lines) %>%
+    separate(
+      .data$line,
+      into = c("property", "value"),
+      sep = "=",
+      extra = "merge",
+      fill = "right"
+    ) %>%
+    mutate(value = coalesce(.data$value, ""))
 }
 
 revision_section <- function(params) {
@@ -94,40 +123,29 @@ unmatched_mask <- function(df, ranks = TAX_RANKS) {
   has_taxonomy(df, ranks = ranks) & !nzchar(df$scientificNameID)
 }
 
-row_finest_names <- function(df, ranks = TAX_RANKS) {
-  if (nrow(df) == 0) {
-    return(character())
-  }
-  vapply(
-    seq_len(nrow(df)),
-    function(i) finest_name(df[i, , drop = FALSE], ranks = ranks),
-    character(1)
-  )
+empty_unmatched <- function() {
+  tibble(name = character(), asvs = integer())
 }
 
 unmatched_names_table <- function(sintax, vsearch, ranks = TAX_RANKS) {
-  s <- sintax[unmatched_mask(sintax, ranks), , drop = FALSE]
-  v <- vsearch[unmatched_mask(vsearch, ranks), , drop = FALSE]
-  pairs <- rbind(
-    data.frame(
-      asv = s$ASV_ID,
-      name = row_finest_names(s, ranks = ranks),
-      stringsAsFactors = FALSE
-    ),
-    data.frame(
-      asv = v$ASV_ID,
-      name = row_finest_names(v, ranks = ranks),
-      stringsAsFactors = FALSE
-    )
-  )
-  pairs <- pairs[nzchar(pairs$name), , drop = FALSE]
+  pairs <- bind_rows(
+    sintax %>%
+      filter(unmatched_mask(., ranks = ranks)) %>%
+      transmute(asv = .data$ASV_ID, name = finest_name(., ranks = ranks)),
+    vsearch %>%
+      filter(unmatched_mask(., ranks = ranks)) %>%
+      transmute(asv = .data$ASV_ID, name = finest_name(., ranks = ranks))
+  ) %>%
+    filter(nzchar(.data$name)) %>%
+    distinct()
+
   if (nrow(pairs) == 0) {
-    return(data.frame(name = character(), asvs = integer(), stringsAsFactors = FALSE))
+    return(empty_unmatched())
   }
-  pairs <- unique(pairs)
-  counts <- as.data.frame(table(pairs$name), stringsAsFactors = FALSE)
-  names(counts) <- c("name", "asvs")
-  counts[order(-counts$asvs, counts$name), ]
+
+  pairs %>%
+    count(.data$name, name = "asvs") %>%
+    arrange(desc(.data$asvs), .data$name)
 }
 
 fmt_pct <- function(n, d) {
@@ -138,83 +156,92 @@ fmt_pct <- function(n, d) {
 }
 
 unmatched_summary_text <- function(sintax, vsearch, ranks = TAX_RANKS) {
-  unmatched_asvs <- unique(c(
-    sintax$ASV_ID[unmatched_mask(sintax, ranks)],
-    vsearch$ASV_ID[unmatched_mask(vsearch, ranks)]
-  ))
-  tax_asvs <- unique(c(
-    sintax$ASV_ID[has_taxonomy(sintax, ranks)],
-    vsearch$ASV_ID[has_taxonomy(vsearch, ranks)]
-  ))
-  unmatched_names <- unique(c(
-    row_finest_names(sintax[unmatched_mask(sintax, ranks), , drop = FALSE], ranks = ranks),
-    row_finest_names(vsearch[unmatched_mask(vsearch, ranks), , drop = FALSE], ranks = ranks)
-  ))
-  unmatched_names <- unmatched_names[nzchar(unmatched_names)]
-  tax_names <- unique(c(
-    row_finest_names(sintax[has_taxonomy(sintax, ranks), , drop = FALSE], ranks = ranks),
-    row_finest_names(vsearch[has_taxonomy(vsearch, ranks), , drop = FALSE], ranks = ranks)
-  ))
-  tax_names <- tax_names[nzchar(tax_names)]
+  unmatched_sintax <- sintax %>% filter(unmatched_mask(., ranks = ranks))
+  unmatched_vsearch <- vsearch %>% filter(unmatched_mask(., ranks = ranks))
+  tax_sintax <- sintax %>% filter(has_taxonomy(., ranks = ranks))
+  tax_vsearch <- vsearch %>% filter(has_taxonomy(., ranks = ranks))
 
-  n_asv <- length(unmatched_asvs)
-  n_asv_total <- length(tax_asvs)
-  n_name <- length(unmatched_names)
-  n_name_total <- length(tax_names)
+  unmatched_asvs <- unique(c(unmatched_sintax$ASV_ID, unmatched_vsearch$ASV_ID))
+  tax_asvs <- unique(c(tax_sintax$ASV_ID, tax_vsearch$ASV_ID))
+  unmatched_names <- unique(c(
+    finest_name(unmatched_sintax, ranks = ranks),
+    finest_name(unmatched_vsearch, ranks = ranks)
+  ))
+  unmatched_names <- unmatched_names[!is.na(unmatched_names) & nzchar(unmatched_names)]
+  tax_names <- unique(c(
+    finest_name(tax_sintax, ranks = ranks),
+    finest_name(tax_vsearch, ranks = ranks)
+  ))
+  tax_names <- tax_names[!is.na(tax_names) & nzchar(tax_names)]
 
   sprintf(
     "%d of %d ASVs (%s) and %d of %d names (%s) could not be matched to WoRMS.",
-    n_asv,
-    n_asv_total,
-    fmt_pct(n_asv, n_asv_total),
-    n_name,
-    n_name_total,
-    fmt_pct(n_name, n_name_total)
+    length(unmatched_asvs),
+    length(tax_asvs),
+    fmt_pct(length(unmatched_asvs), length(tax_asvs)),
+    length(unmatched_names),
+    length(tax_names),
+    fmt_pct(length(unmatched_names), length(tax_names))
   )
 }
 
 agreement_by_rank <- function(sintax, vsearch, ranks = TAX_RANKS) {
-  shared_ids <- intersect(sintax$ASV_ID, vsearch$ASV_ID)
-  s <- sintax[match(shared_ids, sintax$ASV_ID), , drop = FALSE]
-  v <- vsearch[match(shared_ids, vsearch$ASV_ID), , drop = FALSE]
+  shared <- inner_join(
+    sintax %>% select(ASV_ID, all_of(ranks)),
+    vsearch %>% select(ASV_ID, all_of(ranks)),
+    by = "ASV_ID",
+    suffix = c("_sintax", "_vsearch")
+  )
 
-  agree_rows <- lapply(ranks, function(rank) {
-    a <- tolower(s[[rank]])
-    b <- tolower(v[[rank]])
+  by_rank <- map_dfr(ranks, function(rank) {
+    a <- tolower(shared[[paste0(rank, "_sintax")]])
+    b <- tolower(shared[[paste0(rank, "_vsearch")]])
     both <- nzchar(a) & nzchar(b)
-    data.frame(
+    tibble(
       rank = rank,
       both_assigned = sum(both),
       same = sum(both & a == b),
       different = sum(both & a != b),
       only_sintax = sum(nzchar(a) & !nzchar(b)),
       only_vsearch = sum(!nzchar(a) & nzchar(b)),
-      neither = sum(!nzchar(a) & !nzchar(b)),
-      stringsAsFactors = FALSE
+      neither = sum(!nzchar(a) & !nzchar(b))
     )
   })
+
   list(
-    shared_ids = shared_ids,
-    sintax = s,
-    vsearch = v,
-    by_rank = do.call(rbind, agree_rows)
+    shared_ids = shared$ASV_ID,
+    sintax = sintax %>% filter(.data$ASV_ID %in% shared$ASV_ID),
+    vsearch = vsearch %>% filter(.data$ASV_ID %in% shared$ASV_ID),
+    by_rank = by_rank
   )
 }
 
 sintax_species_change_text <- function(sintax, vsearch) {
-  v_idx <- match(sintax$ASV_ID, vsearch$ASV_ID)
-  s_species <- sintax$Species
-  s_genus <- sintax$Genus
-  v_species <- ifelse(is.na(v_idx), "", vsearch$Species[v_idx])
-  v_genus <- ifelse(is.na(v_idx), "", vsearch$Genus[v_idx])
+  compared <- sintax %>%
+    select(ASV_ID, Species, Genus) %>%
+    left_join(
+      vsearch %>% select(ASV_ID, Species, Genus),
+      by = "ASV_ID",
+      suffix = c("_sintax", "_vsearch")
+    ) %>%
+    mutate(
+      across(c("Species_vsearch", "Genus_vsearch"), ~ coalesce(.x, "")),
+      genera_agree = nzchar(.data$Genus_sintax) &
+        nzchar(.data$Genus_vsearch) &
+        tolower(.data$Genus_sintax) == tolower(.data$Genus_vsearch),
+      v_accepted = if_else(
+        nzchar(.data$Species_vsearch) & .data$genera_agree,
+        .data$Species_vsearch,
+        ""
+      ),
+      has_sintax_species = nzchar(.data$Species_sintax)
+    )
 
-  genera_agree <- nzchar(s_genus) & nzchar(v_genus) & tolower(s_genus) == tolower(v_genus)
-  v_accepted <- ifelse(nzchar(v_species) & genera_agree, v_species, "")
-
-  has_sintax_species <- nzchar(s_species)
-  n_removed <- sum(has_sintax_species & !nzchar(v_accepted))
+  n_removed <- sum(compared$has_sintax_species & !nzchar(compared$v_accepted))
   n_updated <- sum(
-    has_sintax_species & nzchar(v_accepted) & tolower(s_species) != tolower(v_accepted)
+    compared$has_sintax_species &
+      nzchar(compared$v_accepted) &
+      tolower(compared$Species_sintax) != tolower(compared$v_accepted)
   )
 
   sprintf(
@@ -224,132 +251,141 @@ sintax_species_change_text <- function(sintax, vsearch) {
   )
 }
 
-classification_rate_by_rank <- function(occurrence_path, ranks = tolower(TAX_RANKS)) {
+read_occurrence <- function(occurrence_path) {
   if (is.null(occurrence_path) || !file.exists(occurrence_path)) {
     return(NULL)
   }
-  occ <- read.delim(occurrence_path, sep = "\t", stringsAsFactors = FALSE,
-                     check.names = FALSE, quote = "")
-  # Extract ASV ID from occurrenceID (format: sampleid_asvhash)
-  occ$asv_id <- sub(".*_", "", occ$occurrenceID)
-  occ_dedup <- occ[!duplicated(occ$asv_id), , drop = FALSE]
+  as_tibble(read_tsv_safe(occurrence_path)) %>%
+    mutate(asv_id = sub(".*_", "", .data$occurrenceID))
+}
+
+classification_rate_by_rank <- function(occurrence_path, ranks = tolower(TAX_RANKS)) {
+  occ <- read_occurrence(occurrence_path)
+  if (is.null(occ)) {
+    return(NULL)
+  }
+  occ_dedup <- occ %>% distinct(.data$asv_id, .keep_all = TRUE)
   n_total <- nrow(occ_dedup)
   if (n_total == 0) {
     return(NULL)
   }
+
   pcts <- vapply(ranks, function(rank) {
-    if (!rank %in% names(occ_dedup)) return(0)
+    if (!rank %in% names(occ_dedup)) {
+      return(0)
+    }
     sum(nzchar(trimws(occ_dedup[[rank]]))) / n_total * 100
   }, numeric(1))
-  data.frame(
+
+  tibble(
     rank = factor(rev(names(pcts)), levels = rev(names(pcts))),
-    classified = round(rev(pcts), 1),
-    stringsAsFactors = FALSE
+    classified = round(rev(pcts), 1)
   )
 }
 
 taxonomy_sunburst_data <- function(occurrence_path, ranks = tolower(TAX_RANKS)) {
-  if (is.null(occurrence_path) || !file.exists(occurrence_path)) {
+  occ <- read_occurrence(occurrence_path)
+  if (is.null(occ)) {
     return(NULL)
   }
-  occ <- read.delim(occurrence_path, sep = "\t", stringsAsFactors = FALSE,
-                     check.names = FALSE, quote = "")
-  occ$asv_id <- sub(".*_", "", occ$occurrenceID)
-  occ_dedup <- occ[!duplicated(occ$asv_id), , drop = FALSE]
-  ranks <- intersect(ranks, names(occ_dedup))
-  if (length(ranks) == 0 || nrow(occ_dedup) == 0) return(NULL)
-
-  for (r in ranks) {
-    occ_dedup[[r]] <- trimws(occ_dedup[[r]])
-    occ_dedup[[r]][!nzchar(occ_dedup[[r]])] <- NA
+  ranks <- intersect(ranks, names(occ))
+  occ_dedup <- occ %>% distinct(.data$asv_id, .keep_all = TRUE)
+  if (length(ranks) == 0 || nrow(occ_dedup) == 0) {
+    return(NULL)
   }
 
-  rows <- list()
-  for (depth in seq_along(ranks)) {
-    r <- ranks[depth]
-    parent_r <- if (depth == 1) NULL else ranks[depth - 1]
+  occ_dedup <- occ_dedup %>%
+    mutate(across(all_of(ranks), blank_to_na))
+
+  rows <- lapply(seq_along(ranks), function(depth) {
+    r <- ranks[[depth]]
     cols <- ranks[seq_len(depth)]
-    sub <- occ_dedup[!is.na(occ_dedup[[r]]), cols, drop = FALSE]
-    if (nrow(sub) == 0) next
-    agg <- aggregate(rep(1, nrow(sub)), by = lapply(cols, function(c) sub[[c]]), FUN = sum)
-    names(agg) <- c(cols, "n")
-    agg$label <- agg[[r]]
-    if (is.null(parent_r)) {
-      agg$id <- agg[[r]]
-      agg$parent <- ""
-    } else {
-      agg$id <- apply(agg[cols], 1, paste, collapse = " - ")
-      agg$parent <- apply(agg[, cols[-length(cols)], drop = FALSE], 1, paste, collapse = " - ")
+    sub <- occ_dedup %>%
+      filter(!is.na(.data[[r]])) %>%
+      select(all_of(cols))
+    if (nrow(sub) == 0) {
+      return(NULL)
     }
-    rows[[depth]] <- agg[, c("id", "label", "parent", "n"), drop = FALSE]
-  }
-  do.call(rbind, rows)
+    sub %>%
+      count(across(all_of(cols)), name = "n") %>%
+      mutate(
+        label = .data[[r]],
+        id = if (depth == 1) {
+          .data[[r]]
+        } else {
+          do.call(paste, c(across(all_of(cols)), sep = " - "))
+        },
+        parent = if (depth == 1) {
+          ""
+        } else {
+          do.call(paste, c(across(all_of(cols[-length(cols)])), sep = " - "))
+        }
+      ) %>%
+      select("id", "label", "parent", "n")
+  })
+
+  bind_rows(rows)
+}
+
+empty_detected_species <- function() {
+  tibble(
+    species = character(),
+    phylum = character(),
+    class = character(),
+    asvs = integer(),
+    reads = integer(),
+    samples = integer()
+  )
+}
+
+first_non_empty <- function(x) {
+  x <- unique(x[nzchar(x) & !is.na(x)])
+  if (length(x) == 0) "" else x[[1]]
 }
 
 detected_species_table <- function(occurrence_path) {
-  if (is.null(occurrence_path) || !file.exists(occurrence_path)) {
+  occ <- read_occurrence(occurrence_path)
+  if (is.null(occ)) {
     return(NULL)
   }
-  occ <- read.delim(occurrence_path, sep = "\t", stringsAsFactors = FALSE,
-                    check.names = FALSE, quote = "")
-  needed <- c("species", "phylum", "class", "sample_id", "organismQuantity")
-  missing <- setdiff(needed, names(occ))
-  if (length(missing) > 0) {
+  needed <- c("species", "phylum", "class", "sample_id", "organismQuantity", "asv_id")
+  if (length(setdiff(needed, names(occ))) > 0 || !"taxonRank" %in% names(occ)) {
     return(NULL)
   }
-  sp <- occ[
-    occ$taxonRank == "species" & nzchar(trimws(occ$species)),
-    needed,
-    drop = FALSE
-  ]
+
+  sp <- occ %>%
+    filter(.data$taxonRank == "species", nzchar(trimws(.data$species))) %>%
+    mutate(
+      species = trimws(as.character(.data$species)),
+      phylum = trimws(as.character(.data$phylum)),
+      class = trimws(as.character(.data$class)),
+      organismQuantity = coalesce(
+        suppressWarnings(as.integer(.data$organismQuantity)),
+        0L
+      )
+    )
+
   if (nrow(sp) == 0) {
-    return(data.frame(
-      species = character(),
-      phylum = character(),
-      class = character(),
-      asvs = integer(),
-      samples = integer(),
-      stringsAsFactors = FALSE
-    ))
+    return(empty_detected_species())
   }
-  sp$species <- trimws(as.character(sp$species))
-  sp$phylum <- trimws(as.character(sp$phylum))
-  sp$class <- trimws(as.character(sp$class))
-  sp$organismQuantity <- suppressWarnings(as.integer(sp$organismQuantity))
-  sp$organismQuantity[is.na(sp$organismQuantity)] <- 0L
 
-  qty_counts <- aggregate(
-    organismQuantity ~ species,
-    data = sp,
-    FUN = sum
-  )
-  sample_counts <- aggregate(
-    sample_id ~ species,
-    data = sp,
-    FUN = function(x) length(unique(x))
-  )
-  # One taxonomy label per species (first non-empty if multiple)
-  tax <- aggregate(
-    cbind(phylum, class) ~ species,
-    data = sp,
-    FUN = function(x) {
-      x <- unique(x[nzchar(x)])
-      if (length(x) == 0) "" else x[[1]]
-    }
-  )
-
-  out <- data.frame(
-    species = qty_counts$species,
-    phylum = tax$phylum[match(qty_counts$species, tax$species)],
-    class = tax$class[match(qty_counts$species, tax$species)],
-    asvs = as.integer(qty_counts$organismQuantity),
-    samples = as.integer(sample_counts$sample_id[match(qty_counts$species, sample_counts$species)]),
-    stringsAsFactors = FALSE
-  )
-  out[order(-out$asvs, out$species), , drop = FALSE]
+  sp %>%
+    group_by(.data$species) %>%
+    summarise(
+      phylum = first_non_empty(.data$phylum),
+      class = first_non_empty(.data$class),
+      asvs = n_distinct(.data$asv_id),
+      reads = sum(.data$organismQuantity),
+      samples = n_distinct(.data$sample_id),
+      .groups = "drop"
+    ) %>%
+    arrange(desc(.data$reads), desc(.data$asvs), .data$species)
 }
 
-#' Build all summary-report tables/text (call this under the debugger).
+`%||%` <- function(x, y) {
+  if (is.null(x)) y else x
+}
+
 build_summary_report <- function(
     sintax_tsv,
     vsearch_tsv,
@@ -372,26 +408,15 @@ build_summary_report <- function(
 
   sintax <- read_tax(sintax_tsv, ranks = ranks)
   vsearch <- read_tax(vsearch_tsv, ranks = ranks)
-
-  unmatched <- unmatched_names_table(sintax, vsearch, ranks = ranks)
   agreement <- agreement_by_rank(sintax, vsearch, ranks = ranks)
 
-  pipeline_version <- param_value(parameters, "pipeline_version")
-  if (is.null(pipeline_version)) {
-    pipeline_version <- "unknown"
-  }
-  run_date <- param_value(parameters, "run_date")
-  if (is.null(run_date)) {
-    run_date <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-  }
-
   list(
-    pipeline_version = pipeline_version,
-    run_date = run_date,
+    pipeline_version = param_value(parameters, "pipeline_version") %||% "unknown",
+    run_date = param_value(parameters, "run_date") %||% format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     parameters = parameters,
     revision = revision_info$revision,
     revision_message = revision_info$revision_message,
-    unmatched = unmatched,
+    unmatched = unmatched_names_table(sintax, vsearch, ranks = ranks),
     unmatched_summary = unmatched_summary_text(sintax, vsearch, ranks = ranks),
     agreement = agreement$by_rank,
     sintax_species_changes = sintax_species_change_text(sintax, vsearch),

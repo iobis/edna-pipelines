@@ -153,8 +153,8 @@ if (is.null(report$detected_species)) {
 } else {
   DT::datatable(
     report$detected_species,
-    colnames = c("Species", "Phylum", "Class", "Reads", "Samples"),
-    options = list(pageLength = 15, dom = "tip", order = list(list(3, "desc"))),
+    colnames = c("Species", "Phylum", "Class", "ASVs", "Reads", "Samples"),
+    options = list(pageLength = 15, dom = "tip", order = list(list(4, "desc"))),
     rownames = FALSE
   )
 }
