@@ -209,6 +209,8 @@ process SUMMARY_REPORT {
     set -euo pipefail
     cat > report_params.tsv <<'EOF'
 parameter	value
+pipeline_version	${workflow.manifest.version}
+run_date	${workflow.start.toString().take(19).replace('T', ' ')}
 outdir	${params.outdir}
 ampliseq_results	${params.ampliseq_results}
 darwincore_outdir	${darwincore_outdir}

@@ -1,5 +1,5 @@
 ---
-title: "eDNA pipeline summary"
+title: "edna-pipelines summary report"
 output:
   html_document:
     theme: flatly
@@ -29,7 +29,18 @@ report <- params$report
 .ampliseq-report-link {
   margin: 0 0 1.25rem;
 }
+.report-meta {
+  margin: 0 0 1rem;
+  color: #555;
+}
+.tocify-extend-page {
+  height: 0 !important;
+}
 ```
+
+<p class="report-meta">
+Run date: `r report$run_date`, pipeline version: `r report$pipeline_version`.
+</p>
 
 <p class="ampliseq-report-link">
 This pipeline builds on nf-core/ampliseq,
@@ -42,7 +53,9 @@ This pipeline builds on nf-core/ampliseq,
 if (is.null(report$parameters)) {
   cat("No parameters file provided.\n")
 } else {
-  knitr::kable(report$parameters, col.names = c("Parameter", "Value"))
+  params_tbl <- report$parameters
+  params_tbl <- params_tbl[!params_tbl$parameter %in% c("pipeline_version", "run_date"), , drop = FALSE]
+  knitr::kable(params_tbl, col.names = c("Parameter", "Value"), row.names = FALSE)
 }
 ```
 
@@ -57,8 +70,6 @@ if (!is.null(report$revision)) {
 ```
 
 ## Unmatched WoRMS names
-
-ASVs with at least one rank assigned but no `scientificNameID`. Unique query names (finest filled rank):
 
 <p><span class="report-highlight">`r report$unmatched_summary`</span></p>
 
@@ -78,8 +89,6 @@ if (nrow(report$unmatched) == 0) {
 ## SINTAX vs VSEARCH name agreement
 
 <p><span class="report-highlight">`r report$sintax_species_changes`</span></p>
-
-Per-rank comparison on shared ASV IDs.
 
 ```{r agreement}
 knitr::kable(report$agreement)
@@ -115,6 +124,9 @@ if (!is.null(report$sunburst)) {
   root <- data.frame(id = "All", label = "All", parent = "", n = root_n,
                      stringsAsFactors = FALSE)
   sb <- rbind(root, sb)
+  sb$depth <- ifelse(sb$id == "All", 0L, lengths(strsplit(sb$id, " - ", fixed = TRUE)))
+  teal_shades <- c("#E8F8F5", "#A3E4D7", "#52BEA0", "#18BC9C", "#148F77", "#0E6655", "#0B5345")
+  sb$color <- teal_shades[pmin(sb$depth + 1L, length(teal_shades))]
   plotly::plot_ly(
     type = "sunburst",
     ids = sb$id,
@@ -123,7 +135,27 @@ if (!is.null(report$sunburst)) {
     values = sb$n,
     branchvalues = "total",
     maxdepth = 4,
-    insidetextorientation = "radial"
+    insidetextorientation = "radial",
+    marker = list(colors = sb$color, line = list(color = "white", width = 1))
+  )
+}
+```
+
+## Detected species
+
+Species-level assignments in the final occurrence table.
+
+```{r detected_species}
+if (is.null(report$detected_species)) {
+  cat("Occurrence table not available.\n")
+} else if (nrow(report$detected_species) == 0) {
+  cat("None.\n")
+} else {
+  DT::datatable(
+    report$detected_species,
+    colnames = c("Species", "Phylum", "Class", "Reads", "Samples"),
+    options = list(pageLength = 15, dom = "tip", order = list(list(3, "desc"))),
+    rownames = FALSE
   )
 }
 ```

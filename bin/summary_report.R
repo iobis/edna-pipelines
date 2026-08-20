@@ -127,7 +127,7 @@ unmatched_names_table <- function(sintax, vsearch, ranks = TAX_RANKS) {
   pairs <- unique(pairs)
   counts <- as.data.frame(table(pairs$name), stringsAsFactors = FALSE)
   names(counts) <- c("name", "asvs")
-  counts[order(counts$name), ]
+  counts[order(-counts$asvs, counts$name), ]
 }
 
 fmt_pct <- function(n, d) {
@@ -261,7 +261,6 @@ taxonomy_sunburst_data <- function(occurrence_path, ranks = tolower(TAX_RANKS)) 
 
   for (r in ranks) {
     occ_dedup[[r]] <- trimws(occ_dedup[[r]])
-    occ_dedup[[r]] <- sub("_[0-9]+$", "", occ_dedup[[r]])
     occ_dedup[[r]][!nzchar(occ_dedup[[r]])] <- NA
   }
 
@@ -285,6 +284,69 @@ taxonomy_sunburst_data <- function(occurrence_path, ranks = tolower(TAX_RANKS)) 
     rows[[depth]] <- agg[, c("id", "label", "parent", "n"), drop = FALSE]
   }
   do.call(rbind, rows)
+}
+
+detected_species_table <- function(occurrence_path) {
+  if (is.null(occurrence_path) || !file.exists(occurrence_path)) {
+    return(NULL)
+  }
+  occ <- read.delim(occurrence_path, sep = "\t", stringsAsFactors = FALSE,
+                    check.names = FALSE, quote = "")
+  needed <- c("species", "phylum", "class", "sample_id", "organismQuantity")
+  missing <- setdiff(needed, names(occ))
+  if (length(missing) > 0) {
+    return(NULL)
+  }
+  sp <- occ[
+    occ$taxonRank == "species" & nzchar(trimws(occ$species)),
+    needed,
+    drop = FALSE
+  ]
+  if (nrow(sp) == 0) {
+    return(data.frame(
+      species = character(),
+      phylum = character(),
+      class = character(),
+      asvs = integer(),
+      samples = integer(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  sp$species <- trimws(as.character(sp$species))
+  sp$phylum <- trimws(as.character(sp$phylum))
+  sp$class <- trimws(as.character(sp$class))
+  sp$organismQuantity <- suppressWarnings(as.integer(sp$organismQuantity))
+  sp$organismQuantity[is.na(sp$organismQuantity)] <- 0L
+
+  qty_counts <- aggregate(
+    organismQuantity ~ species,
+    data = sp,
+    FUN = sum
+  )
+  sample_counts <- aggregate(
+    sample_id ~ species,
+    data = sp,
+    FUN = function(x) length(unique(x))
+  )
+  # One taxonomy label per species (first non-empty if multiple)
+  tax <- aggregate(
+    cbind(phylum, class) ~ species,
+    data = sp,
+    FUN = function(x) {
+      x <- unique(x[nzchar(x)])
+      if (length(x) == 0) "" else x[[1]]
+    }
+  )
+
+  out <- data.frame(
+    species = qty_counts$species,
+    phylum = tax$phylum[match(qty_counts$species, tax$species)],
+    class = tax$class[match(qty_counts$species, tax$species)],
+    asvs = as.integer(qty_counts$organismQuantity),
+    samples = as.integer(sample_counts$sample_id[match(qty_counts$species, sample_counts$species)]),
+    stringsAsFactors = FALSE
+  )
+  out[order(-out$asvs, out$species), , drop = FALSE]
 }
 
 #' Build all summary-report tables/text (call this under the debugger).
@@ -314,7 +376,18 @@ build_summary_report <- function(
   unmatched <- unmatched_names_table(sintax, vsearch, ranks = ranks)
   agreement <- agreement_by_rank(sintax, vsearch, ranks = ranks)
 
+  pipeline_version <- param_value(parameters, "pipeline_version")
+  if (is.null(pipeline_version)) {
+    pipeline_version <- "unknown"
+  }
+  run_date <- param_value(parameters, "run_date")
+  if (is.null(run_date)) {
+    run_date <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  }
+
   list(
+    pipeline_version = pipeline_version,
+    run_date = run_date,
     parameters = parameters,
     revision = revision_info$revision,
     revision_message = revision_info$revision_message,
@@ -324,6 +397,7 @@ build_summary_report <- function(
     sintax_species_changes = sintax_species_change_text(sintax, vsearch),
     classification_rate = classification_rate_by_rank(occurrence_tsv),
     sunburst = taxonomy_sunburst_data(occurrence_tsv),
+    detected_species = detected_species_table(occurrence_tsv),
     n_sintax = nrow(sintax),
     n_vsearch = nrow(vsearch),
     n_shared = length(agreement$shared_ids)
