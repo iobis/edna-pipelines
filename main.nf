@@ -55,13 +55,24 @@ workflow {
     params.ampliseq_results = ampliseq_results_path
 
     def darwincore_outdir_ch = channel.value(darwincore_outdir_abs)
+
+    // Report image, build from containers/Dockerfile when missing or Dockerfile has changed.
+    def report_image_ch
+    if (workflow.profile.tokenize(',').contains('docker')) {
+        ENSURE_REPORT_CONTAINER()
+        report_image_ch = ENSURE_REPORT_CONTAINER.out.image.map { it.text.trim() }
+    } else {
+        report_image_ch = channel.value('')
+    }
+
     WORMS_MATCH(channel.of('sintax', 'vsearch'), ampliseq_done_ch, darwincore_outdir_ch)
     BUILD_DARWIN_CORE(WORMS_MATCH.out.worms.collect(), darwincore_outdir_ch)
     WORMS_MATCH_OCCURRENCE(BUILD_DARWIN_CORE.out.publishing, darwincore_outdir_ch)
     SUMMARY_REPORT(
         WORMS_MATCH.out.worms.filter { method, _path -> method == 'sintax' }.map { _method, path -> path },
         WORMS_MATCH.out.worms.filter { method, _path -> method == 'vsearch' }.map { _method, path -> path },
-        darwincore_outdir_ch
+        darwincore_outdir_ch,
+        report_image_ch
     )
 }
 
@@ -191,14 +202,33 @@ process WORMS_MATCH_OCCURRENCE {
     """
 }
 
+process ENSURE_REPORT_CONTAINER {
+    tag 'report-image'
+    // Always check, rebuild only when the hash-tagged image is missing.
+    cache false
+
+    output:
+    path 'report_image.txt', emit: image
+
+    script:
+    """
+    set -euo pipefail
+    "${projectDir}/scripts/ensure_report_container.sh" \\
+      "${projectDir}/containers/Dockerfile" > report_image.txt
+    """
+}
+
 process SUMMARY_REPORT {
     tag 'summary'
     publishDir { "${darwincore_outdir}/report" }, mode: 'copy', overwrite: true
+    container { report_image ? report_image.toString() : null }
+    containerOptions '-u $(id -u):$(id -g)'
 
     input:
     path sintax_tsv
     path vsearch_tsv
     val darwincore_outdir
+    val report_image
 
     output:
     path 'summary_report.html', emit: report
@@ -229,15 +259,16 @@ sintax_ref_tax_custom	${params.sintax_ref_tax_custom ?: ''}
 sintax_assign_taxlevels	${params.sintax_assign_taxlevels ?: ''}
 vsearch_lca_ref_tax_custom	${params.vsearch_lca_ref_tax_custom ?: ''}
 vsearch_lca_assign_taxlevels	${params.vsearch_lca_assign_taxlevels ?: ''}
-vsearch_lca_id	${params.vsearch_lca_id ?: ''}
-vsearch_lca_maxaccepts	${params.vsearch_lca_maxaccepts ?: ''}
-vsearch_lca_maxrejects	${params.vsearch_lca_maxrejects ?: ''}
-vsearch_lca_lca_cutoff	${params.vsearch_lca_lca_cutoff ?: ''}
-clean_prefix	${params.clean_prefix ?: false}
+vsearch_lca_id	${params.vsearch_lca_id != null ? params.vsearch_lca_id : ''}
+vsearch_lca_maxaccepts	${params.vsearch_lca_maxaccepts != null ? params.vsearch_lca_maxaccepts : ''}
+vsearch_lca_maxrejects	${params.vsearch_lca_maxrejects != null ? params.vsearch_lca_maxrejects : ''}
+vsearch_lca_lca_cutoff	${params.vsearch_lca_lca_cutoff != null ? params.vsearch_lca_lca_cutoff : ''}
+clean_prefix	${params.clean_prefix != null ? params.clean_prefix : false}
 EOF
     cp "${projectDir}/bin/summary_report.Rmd" summary_report.Rmd
     cp "${projectDir}/bin/summary_report.R" summary_report.R
-    Rscript "${projectDir}/bin/render_summary_report.R" \\
+    cp "${projectDir}/bin/render_summary_report.R" render_summary_report.R
+    Rscript render_summary_report.R \\
       --sintax "\${PWD}/${sintax_tsv}" \\
       --vsearch "\${PWD}/${vsearch_tsv}" \\
       --params "\${PWD}/report_params.tsv" \\

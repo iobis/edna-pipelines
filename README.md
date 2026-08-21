@@ -28,7 +28,15 @@ nextflow run main.nf -profile docker \
   --outdir results
 ```
 
-`-profile docker` is only for the nested nf-core/ampliseq run. WoRMS matching, Darwin Core, and the HTML summary still run on the host (Python 3 and R with `rmarkdown` + `DT`).
+`-profile docker` runs nested nf-core/ampliseq in Docker and runs `SUMMARY_REPORT` in a local report image. WoRMS matching and Darwin Core still use host Python (from the pipeline `.venv` when launched via the platform).
+
+### Report container
+
+With `-profile docker`, the pipeline ensures a report image exists before `SUMMARY_REPORT`:
+
+- Image tag is `edna-pipelines-report:<dockerfile-sha256-12>`
+- Rebuilds only when `containers/Dockerfile` changes (or the tagged image is missing)
+- Report R/Rmd scripts are copied into the task at runtime, so code changes do not require a rebuild
 
 ### nf-core/ampliseq source
 
@@ -62,7 +70,7 @@ results/
         └── report_params.tsv
 ```
 
-The HTML summary covers run parameters, unmatched WoRMS names, and SINTAX vs VSEARCH name agreement.
+The HTML summary covers run parameters, unmatched WoRMS names, and SINTAX vs VSEARCH name agreement. It links to the AmpliSeq summary report under `../ampliseq/summary_report/`.
 
 ## Tests
 
