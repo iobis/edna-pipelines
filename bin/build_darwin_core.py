@@ -100,7 +100,13 @@ def metadata_dna_derived_fields(
 def occurrence_metadata_fields(
     metadata_by_sample: dict[str, dict[str, str]],
 ) -> tuple[str, ...]:
-    excluded = set(METADATA_SAMPLE_ID_COLUMNS) | set(DNA_DERIVED_DATA_METADATA_FIELDS)
+    # Core occurrence columns are written once via OCCURRENCE_FIELDS; do not
+    # append them again when they also appear in the sample metadata sheet.
+    excluded = (
+        set(METADATA_SAMPLE_ID_COLUMNS)
+        | set(DNA_DERIVED_DATA_METADATA_FIELDS)
+        | set(OCCURRENCE_FIELDS)
+    )
     return tuple(
         sorted(field for field in metadata_column_names(metadata_by_sample) if field not in excluded)
     )
@@ -309,7 +315,15 @@ def build_occurrence_table(
                 "identificationRemarks": merged.get("identificationRemarks", ""),
             }
 
-            # Attach occurrence-level metadata only (DNA-derived fields go to dnaderiveddata.tsv)
+            # Fill empty core DwC fields from sample metadata (e.g. eventID).
+            for field in OCCURRENCE_FIELDS:
+                if (row.get(field) or "").strip():
+                    continue
+                meta_value = (meta_row.get(field) or "").strip()
+                if meta_value:
+                    row[field] = meta_value
+
+            # Attach extra occurrence-level metadata only (DNA-derived fields go to dnaderiveddata.tsv)
             for field in occurrence_metadata_fieldnames:
                 row[field] = (meta_row.get(field) or "").strip()
 
