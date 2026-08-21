@@ -47,6 +47,22 @@ This pipeline builds on nf-core/ampliseq,
 <a href="../../ampliseq/summary_report/summary_report.html" target="_blank">view the ampliseq summary report here</a>.
 </p>
 
+## Samples
+
+```{r samples}
+if (is.null(report$sample_summary)) {
+  cat("Occurrence table not available.\n")
+} else if (nrow(report$sample_summary) == 0) {
+  cat("None.\n")
+} else {
+  knitr::kable(
+    report$sample_summary,
+    col.names = c("Sample", "ASVs", "Species"),
+    row.names = FALSE
+  )
+}
+```
+
 ## Pipeline parameters
 
 ```{r parameters}

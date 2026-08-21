@@ -338,6 +338,50 @@ empty_detected_species <- function() {
   )
 }
 
+empty_sample_summary <- function() {
+  tibble(
+    sample_id = character(),
+    asvs = integer(),
+    species = integer()
+  )
+}
+
+sample_summary_table <- function(occurrence_path) {
+  occ <- read_occurrence(occurrence_path)
+  if (is.null(occ)) {
+    return(NULL)
+  }
+  needed <- c("sample_id", "asv_id", "species", "taxonRank")
+  if (length(setdiff(needed, names(occ))) > 0) {
+    return(NULL)
+  }
+
+  occ <- occ %>%
+    mutate(
+      sample_id = trimws(as.character(.data$sample_id)),
+      species = trimws(as.character(.data$species))
+    ) %>%
+    filter(nzchar(.data$sample_id))
+
+  if (nrow(occ) == 0) {
+    return(empty_sample_summary())
+  }
+
+  asv_counts <- occ %>%
+    group_by(.data$sample_id) %>%
+    summarise(asvs = n_distinct(.data$asv_id), .groups = "drop")
+
+  species_counts <- occ %>%
+    filter(.data$taxonRank == "species", nzchar(.data$species)) %>%
+    group_by(.data$sample_id) %>%
+    summarise(species = n_distinct(.data$species), .groups = "drop")
+
+  asv_counts %>%
+    left_join(species_counts, by = "sample_id") %>%
+    mutate(species = coalesce(.data$species, 0L)) %>%
+    arrange(.data$sample_id)
+}
+
 first_non_empty <- function(x) {
   x <- unique(x[nzchar(x) & !is.na(x)])
   if (length(x) == 0) "" else x[[1]]
@@ -422,6 +466,7 @@ build_summary_report <- function(
     sintax_species_changes = sintax_species_change_text(sintax, vsearch),
     classification_rate = classification_rate_by_rank(occurrence_tsv),
     sunburst = taxonomy_sunburst_data(occurrence_tsv),
+    sample_summary = sample_summary_table(occurrence_tsv),
     detected_species = detected_species_table(occurrence_tsv),
     n_sintax = nrow(sintax),
     n_vsearch = nrow(vsearch),
