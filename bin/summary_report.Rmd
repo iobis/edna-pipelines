@@ -39,7 +39,11 @@ report <- params$report
 ```
 
 <p class="report-meta">
-Run date: `r report$run_date`, pipeline version: `r report$pipeline_version`.
+Run date: `r report$run_date`
+</p>
+
+<p class="report-meta">
+Pipeline version: `r report$pipeline_version`
 </p>
 
 <p class="ampliseq-report-link">
@@ -135,7 +139,7 @@ if (is.null(report$classification_rate)) {
 ```{r sunburst, fig.width=7, fig.height=7}
 if (!is.null(report$sunburst)) {
   sb <- report$sunburst
-  root_n <- sum(sb$n[sb$parent == ""])
+  root_n <- 0L
   sb$parent[sb$parent == ""] <- "All"
   root <- data.frame(id = "All", label = "All", parent = "", n = root_n,
                      stringsAsFactors = FALSE)
@@ -149,7 +153,7 @@ if (!is.null(report$sunburst)) {
     labels = sb$label,
     parents = sb$parent,
     values = sb$n,
-    branchvalues = "total",
+    branchvalues = "remainder",
     maxdepth = 4,
     insidetextorientation = "radial",
     marker = list(colors = sb$color, line = list(color = "white", width = 1))

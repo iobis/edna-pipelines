@@ -283,6 +283,45 @@ classification_rate_by_rank <- function(occurrence_path, ranks = tolower(TAX_RAN
   )
 }
 
+fill_taxonomy_chain <- function(rank_values, rank_names) {
+  vals <- as.character(rank_values)
+  if (length(vals) != length(rank_names)) {
+    stop("rank_values and rank_names must have equal length", call. = FALSE)
+  }
+  names(vals) <- rank_names
+  vals[vals == ""] <- NA_character_
+
+  assigned <- !is.na(vals)
+  if (!any(assigned)) {
+    return(vals)
+  }
+
+  first <- min(which(assigned))
+  last <- max(which(assigned))
+
+  # Fill only gaps between the shallowest and deepest assigned ranks.
+  if (first < last) {
+    for (j in seq(first + 1L, last)) {
+      if (is.na(vals[[j]])) {
+        parent <- vals[[j - 1L]]
+        if (is.na(parent)) {
+          next
+        }
+        vals[[j]] <- paste0(parent, "_", rank_names[[j]])
+      }
+    }
+  }
+
+  vals
+}
+
+taxonomy_sunburst_node_id <- function(path, depth) {
+  if (depth == 1L) {
+    return(path[[1L]])
+  }
+  paste(path[seq_len(depth)], collapse = " - ")
+}
+
 taxonomy_sunburst_data <- function(occurrence_path, ranks = tolower(TAX_RANKS)) {
   occ <- read_occurrence(occurrence_path)
   if (is.null(occ)) {
@@ -295,36 +334,58 @@ taxonomy_sunburst_data <- function(occurrence_path, ranks = tolower(TAX_RANKS)) 
   }
 
   occ_dedup <- occ_dedup %>%
-    mutate(across(all_of(ranks), blank_to_na))
+    mutate(across(all_of(ranks), blank_to_na)) %>%
+    filter(!is.na(.data[[ranks[[1]]]]))
 
-  rows <- lapply(seq_along(ranks), function(depth) {
-    r <- ranks[[depth]]
-    cols <- ranks[seq_len(depth)]
-    sub <- occ_dedup %>%
-      filter(!is.na(.data[[r]])) %>%
-      select(all_of(cols))
-    if (nrow(sub) == 0) {
-      return(NULL)
+  if (nrow(occ_dedup) == 0) {
+    return(NULL)
+  }
+
+  leaf_counts <- list()
+  node_labels <- list()
+  node_parents <- list()
+
+  for (i in seq_len(nrow(occ_dedup))) {
+    raw <- unlist(occ_dedup[i, ranks, drop = TRUE], use.names = FALSE)
+    filled <- fill_taxonomy_chain(raw, ranks)
+    assigned <- !is.na(filled)
+    last <- max(which(assigned))
+    path <- filled[seq_len(last)]
+    leaf_id <- taxonomy_sunburst_node_id(path, last)
+
+    leaf_counts[[leaf_id]] <- if (is.null(leaf_counts[[leaf_id]])) {
+      1L
+    } else {
+      leaf_counts[[leaf_id]] + 1L
     }
-    sub %>%
-      count(across(all_of(cols)), name = "n") %>%
-      mutate(
-        label = .data[[r]],
-        id = if (depth == 1) {
-          .data[[r]]
-        } else {
-          do.call(paste, c(across(all_of(cols)), sep = " - "))
-        },
-        parent = if (depth == 1) {
-          ""
-        } else {
-          do.call(paste, c(across(all_of(cols[-length(cols)])), sep = " - "))
-        }
-      ) %>%
-      select("id", "label", "parent", "n")
-  })
 
-  bind_rows(rows)
+    for (depth in seq_len(last)) {
+      id <- taxonomy_sunburst_node_id(path, depth)
+      node_labels[[id]] <- path[[depth]]
+      node_parents[[id]] <- if (depth == 1L) {
+        ""
+      } else {
+        taxonomy_sunburst_node_id(path, depth - 1L)
+      }
+    }
+  }
+
+  if (length(leaf_counts) == 0) {
+    return(NULL)
+  }
+
+  all_ids <- names(node_labels)
+  n_vals <- setNames(rep(0L, length(all_ids)), all_ids)
+  for (leaf_id in names(leaf_counts)) {
+    n_vals[[leaf_id]] <- leaf_counts[[leaf_id]]
+  }
+
+  tibble(
+    id = all_ids,
+    label = unlist(node_labels[all_ids], use.names = FALSE),
+    parent = unlist(node_parents[all_ids], use.names = FALSE),
+    n = unlist(n_vals[all_ids], use.names = FALSE)
+  )
 }
 
 empty_detected_species <- function() {
