@@ -98,6 +98,8 @@ process RUN_AMPLISEQ {
       --input ${params.input} \\
       --outdir ${ampliseq_outdir_abs} \\
       --sequencing_type ${ampliseq_sequencing_type} \\
+      ${params.primer_fwd ? "--primer_fwd ${params.primer_fwd}" : ''} \\
+      ${params.primer_rev ? "--primer_rev ${params.primer_rev}" : ''} \\
       ${params.binned_quality ? "--binned_quality ${params.binned_quality}" : ''} \\
       ${params.ignore_binned_quality ? '--ignore_binned_quality' : ''} \\
       ${params.skip_cutadapt ? '--skip_cutadapt' : ''} \\
@@ -237,6 +239,8 @@ ampliseq_repo	${params.ampliseq_repo ?: ''}
 ampliseq_ref	${params.ampliseq_ref ?: ''}
 ampliseq_update	${params.ampliseq_update ?: false}
 sequencing_type	${params.sequencing_type ?: ''}
+primer_fwd	${params.primer_fwd ?: ''}
+primer_rev	${params.primer_rev ?: ''}
 skip_cutadapt	${params.skip_cutadapt ?: false}
 skip_dada_taxonomy	${params.skip_dada_taxonomy ?: false}
 skip_phyloseq	${params.skip_phyloseq ?: false}

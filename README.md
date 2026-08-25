@@ -20,6 +20,8 @@ Default parameters values are set in `nextflow.config`.
 | `--ampliseq_update` | Re-fetch ampliseq on each run | no | `false` |
 | `--ampliseq_profile` | Nextflow profile for nested ampliseq | As `-profile` | `standard`, or `docker` when `-profile docker` is set |
 | `--sequencing_type` | Sequencing type | yes | `illumina_pe` |
+| `--primer_fwd` | Forward primer (required unless `--skip_cutadapt`) | yes | |
+| `--primer_rev` | Reverse primer (required unless `--skip_cutadapt`) | yes | |
 | `--binned_quality` | Comma separated quality bins | yes | |
 | `--ignore_binned_quality` | Ignore binned quality warnings | yes | `false` |
 | `--skip_cutadapt` | | yes | `false` |
@@ -47,7 +49,6 @@ The following key ampliseq parameters are currently not configurable:
 | `--cutadapt_min_overlap` | `3` |
 | `--cutadapt_max_error_rate` | `0.1` |
 | `--vsearch_lca_query_cov` | `1.0` |
-| `--primer_fwd` / `primer_rev` | |
 
 In addition, `--sintax_cutoff` (default `0.8`) is [currently not configurable](https://github.com/nf-core/ampliseq/blob/master/conf/modules.config#L581) in ampliseq.
 
