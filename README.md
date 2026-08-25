@@ -30,23 +30,26 @@ Default parameters values are set in `nextflow.config`.
 | `--sintax_assign_taxlevels` | | yes | |
 | `--vsearch_lca_ref_tax_custom` | | yes | |
 | `--vsearch_lca_assign_taxlevels` | | yes | |
-| `--vsearch_lca_id` | | yes | 0.9 |
-| `--vsearch_lca_maxaccepts` | | yes | 0 |
-| `--vsearch_lca_maxrejects` | | yes | 0 |
-| `--vsearch_lca_lca_cutoff` | | yes | 0.9 |
+| `--vsearch_lca_id` | | yes | `0.9` |
+| `--vsearch_lca_maxaccepts` | | yes | `0` |
+| `--vsearch_lca_maxrejects` | | yes | `0` |
+| `--vsearch_lca_lca_cutoff` | | yes | `0.9` |
 
 The following key ampliseq parameters are currently not configurable:
 
-- `truncq`
-- `max_ee`
-- `min_len`
-- `sample_inference`
-- `trunclenf` / `trunclenr`
-- `cutadapt_min_overlap`
-- `cutadapt_max_error_rate`
-- `sintax_cutoff`
-- `vsearch_lca_query_cov`
-- `FW_primer` / `RV_primer`
+| Parameter | Default |
+| --- | --- |
+| `--truncq` | `2` |
+| `--max_ee` | `2` |
+| `--min_len` | `50` |
+| `--sample_inference` | `pooled` |
+| `--trunclenf` / `--trunclenr` | |
+| `--cutadapt_min_overlap` | `3` |
+| `--cutadapt_max_error_rate` | `0.1` |
+| `--vsearch_lca_query_cov` | `1.0` |
+| `--primer_fwd` / `primer_rev` | |
+
+In addition, `--sintax_cutoff` (default `0.8`) is [currently not configurable](https://github.com/nf-core/ampliseq/blob/master/conf/modules.config#L581) in ampliseq.
 
 ## Steps
 
