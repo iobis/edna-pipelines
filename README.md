@@ -2,86 +2,70 @@
 
 This is an eDNA metabarcoding pipeline with WoRMS aligned Darwin Core output building on nf-core/ampliseq.
 
-## Run
+## Parameters
 
-Single ended:
+Default parameters values are set in `nextflow.config`.
 
-```bash
-nextflow run main.nf -profile docker \
-  --input "$(pwd)/data/samplesheet.tsv" \
-  --sequencing_type illumina_se \
-  --binned_quality 2,12,24,40 \
-  --skip_cutadapt \
-  --skip_dada_taxonomy \
-  --skip_phyloseq \
-  --skip_tse \
-  --sintax_ref_tax_custom "$(pwd)/data/ncbi_18s_bu_pga_derep_filtered_sintax_20260702.fasta.gz" \
-  --sintax_assign_taxlevels Kingdom,Phylum,Class,Order,Family,Genus,Species \
-  --vsearch_lca_ref_tax_custom "$(pwd)/data/ncbi_18s_bu_pga_derep_filtered_sintax_20260702.fasta.gz" \
-  --vsearch_lca_assign_taxlevels Kingdom,Phylum,Class,Order,Family,Genus,Species \
-  --vsearch_lca_id 1 \
-  --vsearch_lca_maxaccepts 0 \
-  --vsearch_lca_maxrejects 0 \
-  --vsearch_lca_lca_cutoff 1 \
-  --metadata "$(pwd)/data/metadata.tsv" \
-  --worms_db /Volumes/acasis/worms/worms_draft_20260522.db \
-  --outdir results
-```
+| Parameter | Description | Forwarded to ampliseq | Default |
+| --- | --- | --- | --- |
+| `--input` | Sample sheet (required unless `--ampliseq_results`) | yes | |
+| `--metadata` | Metadata sheet | no | |
+| `--worms_db` | WoRMS SQLite for taxon matching | no | |
+| `--outdir` | Root output path | ampliseq subfolder as `--outdir` | `results` |
+| `--ampliseq_results` | Reuse existing ampliseq outdir (skips nested ampliseq) | no | |
+| `--clean_prefix` | Strip `s_` sample prefix in DwC builder | no | |
+| `--ampliseq_results` | Reuse an existing ampliseq outdir (skips nested ampliseq) | no | |
+| `--ampliseq_repo` | Git URL for ampliseq checkout | no | `https://github.com/nf-core/ampliseq.git` |
+| `--ampliseq_ref` | Git ref / branch for ampliseq | no | `dev` |
+| `--ampliseq_update` | Re-fetch ampliseq on each run | no | `false` |
+| `--ampliseq_profile` | Nextflow profile for nested ampliseq | As `-profile` | `standard`, or `docker` when `-profile docker` is set |
+| `--sequencing_type` | Sequencing type | yes | `illumina_pe` |
+| `--binned_quality` | Comma separated quality bins | yes | |
+| `--ignore_binned_quality` | Ignore binned quality warnings | yes | `false` |
+| `--skip_cutadapt` | | yes | `false` |
+| `--skip_dada_taxonomy` | | yes | `false` |
+| `--skip_phyloseq` | | yes | `false` |
+| `--skip_tse` | | yes | `false` |
+| `--sintax_ref_tax_custom` | | yes | |
+| `--sintax_assign_taxlevels` | | yes | |
+| `--vsearch_lca_ref_tax_custom` | | yes | |
+| `--vsearch_lca_assign_taxlevels` | | yes | |
+| `--vsearch_lca_id` | | yes | 0.9 |
+| `--vsearch_lca_maxaccepts` | | yes | 0 |
+| `--vsearch_lca_maxrejects` | | yes | 0 |
+| `--vsearch_lca_lca_cutoff` | | yes | 0.9 |
 
-`-profile docker` runs nested nf-core/ampliseq in Docker and runs `SUMMARY_REPORT` in a local report image. WoRMS matching and Darwin Core still use host Python (from the pipeline `.venv` when launched via the platform).
+The following key ampliseq parameters are currently not configurable:
 
-### Report container
+- `truncq`
+- `max_ee`
+- `min_len`
+- `sample_inference`
+- `trunclenf` / `trunclenr`
+- `cutadapt_min_overlap`
+- `cutadapt_max_error_rate`
+- `sintax_cutoff`
+- `vsearch_lca_query_cov`
+- `FW_primer` / `RV_primer`
 
-With `-profile docker`, the pipeline ensures a report image exists before `SUMMARY_REPORT`:
+## Steps
 
-- Image tag is `edna-pipelines-report:<dockerfile-sha256-12>`
-- Rebuilds only when `containers/Dockerfile` changes (or the tagged image is missing)
-- Report R/Rmd scripts are copied into the task at runtime, so code changes do not require a rebuild
+### FastQC and MultiQC (ampliseq)
 
-### nf-core/ampliseq source
+### ASV inference with DADA2 (ampliseq)
 
-Defaults: `--ampliseq_repo https://github.com/nf-core/ampliseq.git`, `--ampliseq_ref dev`, `--ampliseq_update false`.
+### Taxonomic classification: SINTAX (ampliseq)
 
-On the first run, the pipeline clones ampliseq into `third_party/nf-core-ampliseq` and checks out `ampliseq_ref`. With `--ampliseq_update true`, each run fetches and checks out that ref again (use when tracking `dev` or testing a PR branch). The checked-out commit is logged and written to `results/ampliseq/ampliseq.revision`.
+### Taxonomic classification: VSEARCH + LCA (ampliseq)
 
-Example: test a PR branch from a fork:
+### WoRMS matching
 
-```bash
-nextflow run main.nf -profile docker ... \
-  --ampliseq_repo https://github.com/pieterprovoost/ampliseq.git \
-  --ampliseq_ref fix-taxonomy-hash-comment \
-  --ampliseq_update true
-```
+### Darwin core packaging
 
-## Output
-
-After a full run with `--outdir results`:
-
-```
-results/
-├── ampliseq/
-│   ├── ampliseq.revision   # repo, ref, and commit used for this run
-│   └── ampliseq.done
-└── darwincore/
-    ├── worms/
-    ├── publishing/
-    └── report/
-        ├── summary_report.html
-        └── report_params.tsv
-```
-
-The HTML summary covers run parameters, unmatched WoRMS names, and SINTAX vs VSEARCH name agreement. It links to the AmpliSeq summary report under `../ampliseq/summary_report/`.
+### Summary report
 
 ## Tests
 
 ```bash
 pip install pytest && pytest
 ```
-
-## Debug
-
-After a pipeline run, use VS Code launch configs in `.vscode/launch.json`:
-
-- **Debug build_darwin_core (local results)** — `bin/build_darwin_core.py`
-- **Debug worms_match (vsearch)** — `bin/worms_match.py` on `results/ampliseq/vsearch_lca/ASV_tax_vsearch_lca.user.tsv`
-- **Render summary report (local results)** — R Debugger on `bin/debug_render_summary_report.R`; set breakpoints in `bin/summary_report.R` (needs [R Debugger](https://marketplace.visualstudio.com/items?itemName=RDebugger.r-debugger) + `vscDebugger`)

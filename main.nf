@@ -4,10 +4,7 @@ nextflow.enable.dsl = 2
 
 params.worms_db = params.worms_db ?: null
 params.metadata = params.metadata ?: null
-params.run_ampliseq = params.run_ampliseq == null ? true : params.run_ampliseq
 params.outdir = params.outdir ?: 'results'
-params.ampliseq_outdir = params.ampliseq_outdir ?: "${params.outdir}/ampliseq"
-params.darwincore_outdir = params.darwincore_outdir ?: "${params.outdir}/darwincore"
 params.ampliseq_profile = params.ampliseq_profile ?: 'standard'
 params.clean_prefix = params.clean_prefix ?: false
 
@@ -19,19 +16,9 @@ workflow {
     def root_outdir_abs = new File(root_outdir.toString()).isAbsolute()
         ? new File(root_outdir.toString()).absolutePath
         : new File(launch_dir, root_outdir.toString()).absolutePath
-    def ampliseq_outdir_abs = params.ampliseq_outdir
-        ? (new File(params.ampliseq_outdir.toString()).isAbsolute()
-            ? new File(params.ampliseq_outdir.toString()).absolutePath
-            : new File(launch_dir, params.ampliseq_outdir.toString()).absolutePath)
-        : "${root_outdir_abs}/ampliseq"
-    def darwincore_outdir_abs = params.darwincore_outdir
-        ? (new File(params.darwincore_outdir.toString()).isAbsolute()
-            ? new File(params.darwincore_outdir.toString()).absolutePath
-            : new File(launch_dir, params.darwincore_outdir.toString()).absolutePath)
-        : "${root_outdir_abs}/darwincore"
-
-    params.ampliseq_outdir = ampliseq_outdir_abs
-    params.darwincore_outdir = darwincore_outdir_abs
+    // Fixed layout under --outdir (not user-overridable).
+    def ampliseq_outdir_abs = "${root_outdir_abs}/ampliseq"
+    def darwincore_outdir_abs = "${root_outdir_abs}/darwincore"
 
     if (!params.worms_db) error('Set --worms_db to your WoRMS SQLite database (aphiasync)')
     if (!params.metadata) error('Set --metadata to your sample metadata TSV')
@@ -39,17 +26,16 @@ workflow {
     file(params.worms_db, checkIfExists: true)
     file(params.metadata, checkIfExists: true)
 
-    if (params.run_ampliseq) {
-        if (!params.input) error('Set --input samplesheet when --run_ampliseq true')
-        RUN_AMPLISEQ(channel.value(ampliseq_outdir_abs))
-        ampliseq_done_ch = RUN_AMPLISEQ.out.done
-        ampliseq_results_path = ampliseq_outdir_abs
-    } else if (!params.ampliseq_results) {
-        error('Set --ampliseq_results when --run_ampliseq false')
-    } else {
+    // Skip nested ampliseq when --ampliseq_results points at an existing outdir.
+    if (params.ampliseq_results) {
         ampliseq_done_ch = channel.value('existing_ampliseq')
         ampliseq_results_path = params.ampliseq_results
         file(ampliseq_results_path, checkIfExists: true)
+    } else {
+        if (!params.input) error('Set --input samplesheet, or --ampliseq_results to reuse a prior run')
+        RUN_AMPLISEQ(channel.value(ampliseq_outdir_abs))
+        ampliseq_done_ch = RUN_AMPLISEQ.out.done
+        ampliseq_results_path = ampliseq_outdir_abs
     }
 
     params.ampliseq_results = ampliseq_results_path
@@ -246,7 +232,7 @@ ampliseq_results	${params.ampliseq_results}
 darwincore_outdir	${darwincore_outdir}
 metadata	${params.metadata}
 worms_db	${params.worms_db}
-run_ampliseq	${params.run_ampliseq}
+run_ampliseq	${params.ampliseq_results ? false : true}
 ampliseq_repo	${params.ampliseq_repo ?: ''}
 ampliseq_ref	${params.ampliseq_ref ?: ''}
 ampliseq_update	${params.ampliseq_update ?: false}

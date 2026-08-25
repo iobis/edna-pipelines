@@ -502,7 +502,14 @@ build_summary_report <- function(
   revision_info <- revision_section(parameters)
 
   if (is.null(occurrence_tsv)) {
+    # Prefer recorded path; else derive fixed layout under --outdir.
     darwincore_outdir <- param_value(parameters, "darwincore_outdir")
+    if (is.null(darwincore_outdir)) {
+      outdir <- param_value(parameters, "outdir")
+      if (!is.null(outdir)) {
+        darwincore_outdir <- file.path(outdir, "darwincore")
+      }
+    }
     if (!is.null(darwincore_outdir)) {
       candidate <- file.path(darwincore_outdir, "publishing", "occurrence.tsv")
       if (file.exists(candidate)) {
