@@ -53,20 +53,81 @@ The following key ampliseq parameters are currently not configurable:
 In addition, `--sintax_cutoff` (default `0.8`) is [currently not configurable](https://github.com/nf-core/ampliseq/blob/master/conf/modules.config#L581) in ampliseq.
 
 ## Steps
+### Read QC
 
-### FastQC and MultiQC (ampliseq)
+| Nextflow process | Description |
+| --- | --- |
+| `FASTQC` | Per-sample quality plots for raw reads |
+| `MULTIQC` | |
 
-### ASV inference with DADA2 (ampliseq)
+### Primer removal
 
-### Taxonomic classification: SINTAX (ampliseq)
+The subworkflow `CUTADAPT_WORKFLOW` can be disabled with `--skip_cutadapt`.
 
-### Taxonomic classification: VSEARCH + LCA (ampliseq)
+| Nextflow process | Description |
+| --- | --- |
+| `CUTADAPT_BASIC` | Trim primer sequences from reads |
+| `CUTADAPT_SUMMARY_STD` |  |
+| `CUTADAPT_SUMMARY_MERGE` |  |
+| `CUTADAPT_READTHROUGH` | optional |
+| `CUTADAPT_DOUBLEPRIMER` | optional |
+| `CUTADAPT_SUMMARY_DOUBLEPRIMER` | optional |
+
+### Quality trimming
+
+| Nextflow process | Description |
+| --- | --- |
+| `DADA2_QUALITY1` | Quality profiles of primer-trimmed reads |
+| `TRUNCLEN` | Auto-pick truncation lengths from quality plots |
+| `DADA2_FILTNTRIM` | Filter and truncate reads by quality and length |
+| `DADA2_QUALITY2` | Quality profiles after filtering/truncation |
+
+### ASV inference
+
+| Nextflow process | Description |
+| --- | --- |
+| `DADA2_ERR` | Learn DADA2 sequencing error models |
+| `DADA2_DENOISING` | Infer ASVs from filtered reads |
+| `DADA2_RMCHIMERA` | Remove chimeric ASVs |
+| `DADA2_STATS` | Track per-sample read counts through DADA2 |
+| `DADA2_MERGE` | Combine ASV tables across samples |
+
+### Taxonomic classification
+#### SINTAX
+
+| Nextflow process | Description |
+| --- | --- |
+| `FORMAT_TAXONOMY_SINTAX` |  |
+| `VSEARCH_SINTAX` | Assign taxonomy with SINTAX |
+| `FORMAT_TAXRESULTS_SINTAX` | Turn SINTAX output into a taxonomy table |
+
+#### VSEARCH + LCA
+
+| Nextflow process | Description |
+| --- | --- |
+| `FORMAT_TAXONOMY_VSEARCH_LCA` | Convert the reference DB for VSEARCH + LCA |
+| `VSEARCH_USEARCHGLOBAL_LCA` | Assign taxonomy with VSEARCH + LCA |
+| `FORMAT_TAXRESULTS_VSEARCH_LCA` | Turn VSEARCH + LCA output into a taxonomy table |
 
 ### WoRMS matching
 
+| Nextflow process | Description |
+| --- | --- |
+| `WORMS_MATCH` |  |
+| `WORMS_MATCH_OCCURRENCE` |  |
+
 ### Darwin core packaging
 
+| Nextflow process | Description |
+| --- | --- |
+| `BUILD_DARWIN_CORE` |  |
+
 ### Summary report
+
+| Nextflow process | Description |
+| --- | --- |
+| `SUMMARY_REPORT` (ampliseq) | HTML summary of the ampliseq run |
+| `SUMMARY_REPORT` (wrapper) | HTML summary of WoRMS matching and Darwin Core output |
 
 ## Tests
 
