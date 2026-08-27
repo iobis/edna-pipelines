@@ -58,7 +58,7 @@ In addition, `--sintax_cutoff` (default `0.8`) is [currently not configurable](h
 | Nextflow process | Description |
 | --- | --- |
 | `FASTQC` | Per-sample quality plots for raw reads |
-| `MULTIQC` | |
+| `MULTIQC` | Single quality report across samples |
 
 ### Primer removal
 
