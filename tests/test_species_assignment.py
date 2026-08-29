@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bin.build_darwin_core import merge_asv_taxonomy, species_label
+from bin.build_darwin_core import identification_remarks, merge_asv_taxonomy, species_label
 from bin.worms_match import clean_missing_rank_values, enrich_rows_with_worms, finest_taxon
 
 # From MIDORI header:
@@ -96,7 +96,36 @@ def test_merge_asv_taxonomy_uses_vsearch_species_when_genera_match() -> None:
     vsearch_row = {"Genus": "Gadus", "Species": "morhua"}
     merged = merge_asv_taxonomy(sintax_row, vsearch_row)
     assert merged["species"] == "morhua"
-    assert "VSEARCH species assignment: morhua" in merged["identificationRemarks"]
+    assert merged["identificationRemarks"] == ""
+
+
+def test_merge_asv_taxonomy_identification_remarks_includes_sintax_species_and_raw() -> None:
+    sintax_row = {"Genus": "Homo", "Species": "Homo sapiens_9606"}
+    raw_sintax = (
+        "k:Eukaryota_2759(1.00),p:Chordata_7711(1.00),c:Mammalia_40674(1.00),"
+        "o:Primates_9443(1.00),f:Hominidae_9604(1.00),g:Homo_9605(1.00),"
+        "s:Homo sapiens_9606(1.00)"
+    )
+    merged = merge_asv_taxonomy(sintax_row, None, raw_sintax=raw_sintax)
+    assert merged["identificationRemarks"] == (
+        "SINTAX species assignment was: Homo sapiens_9606; "
+        "SINTAX confidence: k:Eukaryota_2759(1.00),p:Chordata_7711(1.00),c:Mammalia_40674(1.00),"
+        "o:Primates_9443(1.00),f:Hominidae_9604(1.00),g:Homo_9605(1.00),"
+        "s:Homo sapiens_9606(1.00)"
+    )
+
+
+def test_identification_remarks_includes_confidence_without_species() -> None:
+    raw_sintax = "k:Eukaryota_2759(1.00),p:Chordata_7711(1.00)"
+    assert identification_remarks("", raw_sintax) == (
+        "SINTAX confidence: k:Eukaryota_2759(1.00),p:Chordata_7711(1.00)"
+    )
+
+
+def test_identification_remarks_omits_raw_when_missing() -> None:
+    assert identification_remarks("Homo sapiens_9606") == (
+        "SINTAX species assignment was: Homo sapiens_9606"
+    )
 
 
 def test_merge_asv_taxonomy_drops_vsearch_species_when_genera_differ() -> None:
@@ -104,7 +133,7 @@ def test_merge_asv_taxonomy_drops_vsearch_species_when_genera_differ() -> None:
     vsearch_row = {"Genus": "Gymnodinium", "Species": "Gymnodinium_sp._NVA/RUS/2008"}
     merged = merge_asv_taxonomy(sintax_row, vsearch_row)
     assert merged["species"] == ""
-    assert "genus does not match SINTAX" in merged["identificationRemarks"]
+    assert merged["identificationRemarks"] == ""
 
 
 def test_merge_asv_taxonomy_drops_vsearch_species_when_sintax_genus_missing() -> None:
@@ -112,7 +141,7 @@ def test_merge_asv_taxonomy_drops_vsearch_species_when_sintax_genus_missing() ->
     vsearch_row = {"Genus": "Gymnodinium", "Species": "Gymnodinium_sp._NVA/RUS/2008"}
     merged = merge_asv_taxonomy(sintax_row, vsearch_row)
     assert merged["species"] == ""
-    assert "genus does not match SINTAX" in merged["identificationRemarks"]
+    assert merged["identificationRemarks"] == ""
 
 
 @pytest.mark.xfail(strict=True, reason=XFAIL_REASON)

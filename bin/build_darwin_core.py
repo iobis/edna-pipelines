@@ -134,6 +134,44 @@ def find_pipeline_params_json(ampliseq_root: Path) -> Path:
     return matches[0]
 
 
+def find_sintax_raw_table(ampliseq_root: Path) -> Path | None:
+    sintax_dir = ampliseq_root / "sintax"
+    if not sintax_dir.is_dir():
+        return None
+
+    matches = sorted(
+        path
+        for path in sintax_dir.iterdir()
+        if path.is_file()
+        and path.name.startswith("ASV_tax_sintax")
+        and ".raw." in path.name
+        and path.suffix == ".tsv"
+    )
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        names = ", ".join(path.name for path in matches)
+        raise FileNotFoundError(f"multiple raw SINTAX tables in {sintax_dir}: {names}")
+    return None
+
+
+def load_sintax_raw_by_asv(path: Path) -> dict[str, str]:
+    by_asv: dict[str, str] = {}
+    with path.open(newline="") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            asv_id = parts[0].strip()
+            raw_assignment = parts[1].strip()
+            if asv_id and raw_assignment:
+                by_asv[asv_id] = raw_assignment
+    return by_asv
+
+
 def find_worms_matched(output_dir: Path, method: str) -> Path:
     path = output_dir / "worms" / method / f"worms_matched.{method}.tsv"
     if not path.is_file():
@@ -170,62 +208,37 @@ def genera_agree(sintax_row: dict[str, str], vsearch_row: dict[str, str]) -> boo
 
 def vsearch_species_if_genus_agrees(
     sintax_row: dict[str, str], vsearch_row: dict[str, str]
-) -> tuple[str, str]:
-    """Return (accepted_species, rejected_species) from VSEARCH."""
+) -> str:
+    """Return VSEARCH species only when its genus matches SINTAX."""
 
     vsearch_species = species_label(vsearch_row)
     if not vsearch_species:
-        return "", ""
+        return ""
     if genera_agree(sintax_row, vsearch_row):
-        return vsearch_species, ""
-    return "", vsearch_species
+        return vsearch_species
+    return ""
 
 
-def identification_remarks(
-    sintax_species: str,
-    vsearch_species: str,
-    *,
-    vsearch_species_rejected: str = "",
-    sintax_genus: str = "",
-    vsearch_genus: str = "",
-) -> str:
-    remarks: list[str] = []
-    if vsearch_species_rejected:
-        remarks.append(
-            "VSEARCH species assignment removed (genus does not match SINTAX): "
-            f"{vsearch_species_rejected} "
-            f"(SINTAX genus: {sintax_genus or 'unassigned'}; "
-            f"VSEARCH genus: {vsearch_genus or 'unassigned'})"
-        )
-    if sintax_species and not vsearch_species:
-        remarks.append(
-            "SINTAX species assignment removed (not replaced by VSEARCH): "
-            f"{sintax_species}"
-        )
-    elif vsearch_species:
-        if sintax_species:
-            remarks.append(
-                f"VSEARCH species assignment: {vsearch_species}; "
-                f"SINTAX species was: {sintax_species}"
-            )
-        else:
-            remarks.append(
-                f"VSEARCH species assignment: {vsearch_species}; "
-                "SINTAX had no species assignment"
-            )
-    return "; ".join(remarks)
+def identification_remarks(sintax_species: str, raw_sintax: str = "") -> str:
+    parts: list[str] = []
+    if sintax_species:
+        parts.append(f"SINTAX species assignment was: {sintax_species}")
+    if raw_sintax:
+        parts.append(f"SINTAX confidence: {raw_sintax}")
+    return "; ".join(parts)
 
 
 def merge_asv_taxonomy(
-    sintax_row: dict[str, str], vsearch_row: dict[str, str] | None
+    sintax_row: dict[str, str],
+    vsearch_row: dict[str, str] | None,
+    *,
+    raw_sintax: str = "",
 ) -> dict[str, str]:
     """SINTAX is the taxonomic basis, species level comes from VSEARCH only."""
 
     vsearch_row = vsearch_row or {}
     sintax_species = species_label(sintax_row)
-    vsearch_species, vsearch_species_rejected = vsearch_species_if_genus_agrees(
-        sintax_row, vsearch_row
-    )
+    vsearch_species = vsearch_species_if_genus_agrees(sintax_row, vsearch_row)
 
     merged: dict[str, str] = {
         "kingdom": rank_value(sintax_row, "Kingdom"),
@@ -237,13 +250,7 @@ def merge_asv_taxonomy(
         "species": vsearch_species,
     }
 
-    merged["identificationRemarks"] = identification_remarks(
-        sintax_species,
-        vsearch_species,
-        vsearch_species_rejected=vsearch_species_rejected,
-        sintax_genus=genus_label(sintax_row),
-        vsearch_genus=genus_label(vsearch_row),
-    )
+    merged["identificationRemarks"] = identification_remarks(sintax_species, raw_sintax)
     return merged
 
 
@@ -266,6 +273,7 @@ def build_occurrence_table(
     output_path: Path,
     *,
     clean_prefix: bool,
+    sintax_raw_by_asv: dict[str, str] | None = None,
 ) -> list[tuple[str, str, str]]:
     """
     Build Darwin Core Occurrence table. Occurrence IDs are constructed as {sample_id}_{asv_id}.
@@ -290,7 +298,11 @@ def build_occurrence_table(
         if not sintax_row:
             # Skip ASVs without SINTAX taxonomy
             continue
-        merged = merge_asv_taxonomy(sintax_row, vsearch_by_asv.get(asv_id))
+        merged = merge_asv_taxonomy(
+            sintax_row,
+            vsearch_by_asv.get(asv_id),
+            raw_sintax=(sintax_raw_by_asv or {}).get(asv_id, ""),
+        )
 
         for sample_id, raw_value in dada2_row.items():
             if sample_id in {"ASV_ID", "sequence"}:
@@ -389,6 +401,8 @@ def build_darwin_core(
     sintax_rows = load_tsv(find_worms_matched(output_dir, "sintax"))
     vsearch_rows = load_tsv(find_worms_matched(output_dir, "vsearch"))
     dada2_rows = load_tsv(find_dada2_table(ampliseq_results))
+    sintax_raw_path = find_sintax_raw_table(ampliseq_results)
+    sintax_raw_by_asv = load_sintax_raw_by_asv(sintax_raw_path) if sintax_raw_path else {}
     metadata_by_sample = load_metadata(metadata_path)
     dna_metadata_fields = metadata_dna_derived_fields(metadata_by_sample)
     occurrence_metadata_fieldnames = occurrence_metadata_fields(metadata_by_sample)
@@ -404,6 +418,7 @@ def build_darwin_core(
         pipeline_params,
         dwc_dir / "occurrence.tsv",
         clean_prefix=clean_prefix,
+        sintax_raw_by_asv=sintax_raw_by_asv,
     )
     build_dna_derived_data_table(
         dada2_rows,
