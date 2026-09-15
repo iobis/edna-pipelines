@@ -155,6 +155,61 @@ def find_sintax_raw_table(ampliseq_root: Path) -> Path | None:
     return None
 
 
+def find_vsearch_hits_table(ampliseq_root: Path) -> Path | None:
+    """Locate blast6out hits from VSEARCH LCA (`ASV_tax_vsearch_lca.*.txt`)."""
+
+    vsearch_dir = ampliseq_root / "vsearch_lca"
+    if not vsearch_dir.is_dir():
+        return None
+
+    matches = sorted(
+        path
+        for path in vsearch_dir.iterdir()
+        if path.is_file()
+        and path.name.startswith("ASV_tax_vsearch_lca")
+        and path.suffix == ".txt"
+        and not path.name.endswith(".lca")
+        and "ref_taxonomy" not in path.name
+    )
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        names = ", ".join(path.name for path in matches)
+        raise FileNotFoundError(f"multiple VSEARCH hits tables in {vsearch_dir}: {names}")
+    return None
+
+
+def accession_from_blast6_target(target: str) -> str:
+    """Extract accession from a blast6 target field (`ACC;tax=...` or `*`)."""
+
+    target = (target or "").strip()
+    if not target or target == "*":
+        return ""
+    return target.split(";", 1)[0].strip()
+
+
+def load_vsearch_hits_by_asv(path: Path) -> dict[str, list[str]]:
+    """Parse VSEARCH blast6out hits into unique accession lists keyed by ASV ID."""
+
+    by_asv: dict[str, list[str]] = {}
+    with path.open(newline="") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            asv_id = parts[0].strip()
+            accession = accession_from_blast6_target(parts[1])
+            if not asv_id or not accession:
+                continue
+            accessions = by_asv.setdefault(asv_id, [])
+            if accession not in accessions:
+                accessions.append(accession)
+    return by_asv
+
+
 def load_sintax_raw_by_asv(path: Path) -> dict[str, str]:
     by_asv: dict[str, str] = {}
     with path.open(newline="") as handle:
@@ -219,12 +274,19 @@ def vsearch_species_if_genus_agrees(
     return ""
 
 
-def identification_remarks(sintax_species: str, raw_sintax: str = "") -> str:
+def identification_remarks(
+    sintax_species: str,
+    raw_sintax: str = "",
+    *,
+    hits: list[str] | None = None,
+) -> str:
     parts: list[str] = []
     if sintax_species:
         parts.append(f"SINTAX species assignment was: {sintax_species}")
     if raw_sintax:
         parts.append(f"SINTAX confidence: {raw_sintax}")
+    if hits:
+        parts.append(f"VSEARCH hits: {','.join(hits)}")
     return "; ".join(parts)
 
 
@@ -233,6 +295,7 @@ def merge_asv_taxonomy(
     vsearch_row: dict[str, str] | None,
     *,
     raw_sintax: str = "",
+    hits: list[str] | None = None,
 ) -> dict[str, str]:
     """SINTAX is the taxonomic basis, species level comes from VSEARCH only."""
 
@@ -250,7 +313,11 @@ def merge_asv_taxonomy(
         "species": vsearch_species,
     }
 
-    merged["identificationRemarks"] = identification_remarks(sintax_species, raw_sintax)
+    # Hits accessions are only attached when a VSEARCH species assignment is kept.
+    remarks_hits = hits if vsearch_species and hits else None
+    merged["identificationRemarks"] = identification_remarks(
+        sintax_species, raw_sintax, hits=remarks_hits
+    )
     return merged
 
 
@@ -274,6 +341,7 @@ def build_occurrence_table(
     *,
     clean_prefix: bool,
     sintax_raw_by_asv: dict[str, str] | None = None,
+    vsearch_hits_by_asv: dict[str, list[str]] | None = None,
 ) -> list[tuple[str, str, str]]:
     """
     Build Darwin Core Occurrence table. Occurrence IDs are constructed as {sample_id}_{asv_id}.
@@ -302,6 +370,7 @@ def build_occurrence_table(
             sintax_row,
             vsearch_by_asv.get(asv_id),
             raw_sintax=(sintax_raw_by_asv or {}).get(asv_id, ""),
+            hits=(vsearch_hits_by_asv or {}).get(asv_id),
         )
 
         for sample_id, raw_value in dada2_row.items():
@@ -403,6 +472,10 @@ def build_darwin_core(
     dada2_rows = load_tsv(find_dada2_table(ampliseq_results))
     sintax_raw_path = find_sintax_raw_table(ampliseq_results)
     sintax_raw_by_asv = load_sintax_raw_by_asv(sintax_raw_path) if sintax_raw_path else {}
+    vsearch_hits_path = find_vsearch_hits_table(ampliseq_results)
+    vsearch_hits_by_asv = (
+        load_vsearch_hits_by_asv(vsearch_hits_path) if vsearch_hits_path else {}
+    )
     metadata_by_sample = load_metadata(metadata_path)
     dna_metadata_fields = metadata_dna_derived_fields(metadata_by_sample)
     occurrence_metadata_fieldnames = occurrence_metadata_fields(metadata_by_sample)
@@ -419,6 +492,7 @@ def build_darwin_core(
         dwc_dir / "occurrence.tsv",
         clean_prefix=clean_prefix,
         sintax_raw_by_asv=sintax_raw_by_asv,
+        vsearch_hits_by_asv=vsearch_hits_by_asv,
     )
     build_dna_derived_data_table(
         dada2_rows,

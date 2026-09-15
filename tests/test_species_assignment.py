@@ -99,6 +99,65 @@ def test_merge_asv_taxonomy_uses_vsearch_species_when_genera_match() -> None:
     assert merged["identificationRemarks"] == ""
 
 
+def test_merge_asv_taxonomy_identification_remarks_includes_hits_for_species() -> None:
+    sintax_row = {"Genus": "Gadus", "Species": "Gadus_morhua"}
+    vsearch_row = {"Genus": "Gadus", "Species": "morhua"}
+    merged = merge_asv_taxonomy(
+        sintax_row,
+        vsearch_row,
+        raw_sintax="g:Gadus(1.00),s:Gadus_morhua(0.90)",
+        hits=["OP288117", "KJ763881"],
+    )
+    assert merged["species"] == "morhua"
+    assert merged["identificationRemarks"] == (
+        "SINTAX species assignment was: Gadus_morhua; "
+        "SINTAX confidence: g:Gadus(1.00),s:Gadus_morhua(0.90); "
+        "VSEARCH hits: OP288117,KJ763881"
+    )
+
+
+def test_merge_asv_taxonomy_omits_hits_when_species_not_assigned() -> None:
+    sintax_row = {"Genus": "Eukaryota", "Species": ""}
+    vsearch_row = {"Genus": "Gymnodinium", "Species": "Gymnodinium_sp._NVA/RUS/2008"}
+    merged = merge_asv_taxonomy(
+        sintax_row, vsearch_row, hits=["OP288117", "KJ763881"]
+    )
+    assert merged["species"] == ""
+    assert merged["identificationRemarks"] == ""
+
+
+def test_identification_remarks_includes_hits() -> None:
+    assert identification_remarks("", hits=["OP288117", "KJ763881"]) == (
+        "VSEARCH hits: OP288117,KJ763881"
+    )
+
+
+def test_accession_from_blast6_target_and_load_hits(tmp_path: Path) -> None:
+    from bin.build_darwin_core import (
+        accession_from_blast6_target,
+        load_vsearch_hits_by_asv,
+    )
+
+    assert (
+        accession_from_blast6_target(
+            "OP288117;tax=d:Eukaryota,s:Strombidium_biarmatum"
+        )
+        == "OP288117"
+    )
+    assert accession_from_blast6_target("*") == ""
+
+    hits_path = tmp_path / "ASV_tax_vsearch_lca.user.txt"
+    hits_path.write_text(
+        "asv1\tOP288117;tax=d:Eukaryota\t100.0\t10\t0\t0\t1\t10\t1\t10\t-1\t0\n"
+        "asv1\tKJ763881;tax=d:Eukaryota\t100.0\t10\t0\t0\t1\t10\t1\t10\t-1\t0\n"
+        "asv1\tOP288117;tax=d:Eukaryota\t100.0\t10\t0\t0\t1\t10\t1\t10\t-1\t0\n"
+        "asv2\t*\t0.0\t0\t0\t0\t0\t0\t0\t0\t-1\t0\n"
+    )
+    assert load_vsearch_hits_by_asv(hits_path) == {
+        "asv1": ["OP288117", "KJ763881"],
+    }
+
+
 def test_merge_asv_taxonomy_identification_remarks_includes_sintax_species_and_raw() -> None:
     sintax_row = {"Genus": "Homo", "Species": "Homo sapiens_9606"}
     raw_sintax = (
