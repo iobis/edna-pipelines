@@ -2,6 +2,8 @@
 
 This is an eDNA metabarcoding pipeline with WoRMS aligned Darwin Core output building on nf-core/ampliseq.
 
+After DADA2 ASV inference, two independent taxonomic classifiers are run, backed by the same reference databases. SINTAX uses k-mer similarity and performs bootstrap resampling to determine confidence values for each taxonomic rank. Ranks below the cutoff are dropped. VSEARCH performs global pairwise alignment, and accepted hits are collapsed with a lowest common ancestor (LCA) step. Results from the two methods are combined: SINTAX is used for the higher taxonomic levels, species assignments are only allowed from VSEARCH + LCA and are required to match the genus assignment from SINTAX. For eDNA Expeditions, the VSEARCH identity and LCA agreement cutoffs are set to 100% in order to be very conservative in the species assignment. The SINTAX confidence cutoff is set at 0.8.
+
 ## Parameters
 
 Default parameters values are set in `nextflow.config`.
