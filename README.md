@@ -27,6 +27,7 @@ Default parameters values are set in `nextflow.config`.
 | `--binned_quality` | Comma separated quality bins | yes | |
 | `--ignore_binned_quality` | Ignore binned quality warnings | yes | `false` |
 | `--skip_cutadapt` | | yes | `false` |
+| `--illumina_pe_readthrough` | Second cutadapt pass that trims the opposite primer from the 3' end and anything beyond | yes | `false` |
 | `--skip_dada_taxonomy` | | yes | `false` |
 | `--skip_phyloseq` | | yes | `false` |
 | `--skip_tse` | | yes | `false` |
@@ -68,10 +69,10 @@ The subworkflow `CUTADAPT_WORKFLOW` can be disabled with `--skip_cutadapt`.
 
 | Nextflow process | Description |
 | --- | --- |
-| `CUTADAPT_BASIC` | Trim primer sequences from reads |
+| `CUTADAPT_BASIC` | Trim 5′ primer sequences from reads |
 | `CUTADAPT_SUMMARY_STD` |  |
 | `CUTADAPT_SUMMARY_MERGE` |  |
-| `CUTADAPT_READTHROUGH` | optional |
+| `CUTADAPT_READTHROUGH` | Enabled by `--illumina_pe_readthrough` |
 | `CUTADAPT_DOUBLEPRIMER` | optional |
 | `CUTADAPT_SUMMARY_DOUBLEPRIMER` | optional |
 
