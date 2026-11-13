@@ -26,6 +26,7 @@ Default parameters values are set in `nextflow.config`.
 | `--primer_rev` | Reverse primer (required unless `--skip_cutadapt`) | yes | |
 | `--binned_quality` | Comma separated quality bins | yes | |
 | `--ignore_binned_quality` | Ignore binned quality warnings | yes | `false` |
+| `--ignore_failed_filtering` | Continue when samples have too few reads after DADA2 quality filtering | yes | `false` |
 | `--skip_cutadapt` | | yes | `false` |
 | `--illumina_pe_readthrough` | Second cutadapt pass that trims the opposite primer from the 3' end and anything beyond | yes | `false` |
 | `--skip_dada_taxonomy` | | yes | `false` |

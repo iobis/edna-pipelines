@@ -102,6 +102,7 @@ process RUN_AMPLISEQ {
       ${params.primer_rev ? "--primer_rev ${params.primer_rev}" : ''} \\
       ${params.binned_quality ? "--binned_quality ${params.binned_quality}" : ''} \\
       ${params.ignore_binned_quality ? '--ignore_binned_quality' : ''} \\
+      ${params.ignore_failed_filtering ? '--ignore_failed_filtering' : ''} \\
       ${params.skip_cutadapt ? '--skip_cutadapt' : ''} \\
       ${params.illumina_pe_readthrough ? '--illumina_pe_readthrough' : ''} \\
       ${params.skip_dada_taxonomy ? '--skip_dada_taxonomy' : ''} \\
@@ -243,6 +244,7 @@ sequencing_type	${params.sequencing_type ?: ''}
 primer_fwd	${params.primer_fwd ?: ''}
 primer_rev	${params.primer_rev ?: ''}
 skip_cutadapt	${params.skip_cutadapt ?: false}
+ignore_failed_filtering	${params.ignore_failed_filtering ?: false}
 illumina_pe_readthrough	${params.illumina_pe_readthrough ?: false}
 skip_dada_taxonomy	${params.skip_dada_taxonomy ?: false}
 skip_phyloseq	${params.skip_phyloseq ?: false}
