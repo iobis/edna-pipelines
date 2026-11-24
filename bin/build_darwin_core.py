@@ -49,6 +49,8 @@ DNA_DERIVED_DATA_METADATA_FIELDS = (
     "env_medium",
 )
 METADATA_SAMPLE_ID_COLUMNS = ("sampleID", "sample_id", "sample")
+# FAIRe assay identifier. Used in occurrenceID, not copied onto either table.
+OCCURRENCE_ID_METADATA_FIELDS = ("assay_name",)
 SAMPLE_ID_PREFIX = "s_"
 
 
@@ -106,6 +108,7 @@ def occurrence_metadata_fields(
         set(METADATA_SAMPLE_ID_COLUMNS)
         | set(DNA_DERIVED_DATA_METADATA_FIELDS)
         | set(OCCURRENCE_FIELDS)
+        | set(OCCURRENCE_ID_METADATA_FIELDS)
     )
     return tuple(
         sorted(field for field in metadata_column_names(metadata_by_sample) if field not in excluded)
@@ -330,6 +333,15 @@ def index_rows_by_asv(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
     return by_id
 
 
+def occurrence_id_for(sample_id: str, asv_id: str, assay_name: str) -> str:
+    """Sample × assay × ASV. Assay is omitted when the metadata sheet has none."""
+
+    assay_name = assay_name.strip()
+    if assay_name:
+        return f"{sample_id}_{assay_name}_{asv_id}"
+    return f"{sample_id}_{asv_id}"
+
+
 def build_occurrence_table(
     sintax_rows: list[dict[str, str]],
     vsearch_rows: list[dict[str, str]],
@@ -344,8 +356,10 @@ def build_occurrence_table(
     vsearch_hits_by_asv: dict[str, list[str]] | None = None,
 ) -> list[tuple[str, str, str]]:
     """
-    Build Darwin Core Occurrence table. Occurrence IDs are constructed as {sample_id}_{asv_id}.
-    Non-DNA-derived metadata columns are added to the output.
+    Build Darwin Core Occurrence table. Occurrence IDs are
+    {sample_id}_{assay_name}_{asv_id} when the metadata sheet has assay_name,
+    otherwise {sample_id}_{asv_id}. Non-DNA-derived metadata columns are added
+    to the output.
     """
 
     _ = pipeline_params
@@ -381,8 +395,12 @@ def build_occurrence_table(
                 continue
 
             output_sample_id = clean_sample_id(sample_id, clean_prefix=clean_prefix)
-            occurrence_id = f"{output_sample_id}_{asv_id}"
             meta_row = metadata_by_sample.get(output_sample_id, metadata_by_sample.get(sample_id, {}))
+            occurrence_id = occurrence_id_for(
+                output_sample_id,
+                asv_id,
+                meta_row.get("assay_name") or "",
+            )
 
             row: dict[str, str] = {
                 "occurrenceID": occurrence_id,
