@@ -29,6 +29,11 @@ METHOD_SUBDIR = {
     "vsearch": "vsearch_lca",
 }
 PLACEHOLDER_NAMES = frozenset({"na", "n/a", "unassigned", ""})
+# WoRMS AphiaID 12, "Biota incertae sedis" (temporary name, rank kingdom).
+# Used when an occurrence has no name at any rank.
+INCERTAE_SEDIS_NAME = "incertae sedis"
+INCERTAE_SEDIS_ID = f"{WORMS_LSID_PREFIX}12"
+INCERTAE_SEDIS_RANK = "kingdom"
 RANK_COLUMN_NAMES = frozenset(
     {rank.casefold() for rank in FINEST_RANK_COLUMNS}
     | {rank.lower() for rank in FINEST_RANK_COLUMNS}
@@ -189,9 +194,9 @@ def enrich_rows_with_worms(
         out_row = dict(row)
         scientific_name, taxon_rank = finest_taxon(row, ranks=ranks)
         if not scientific_name:
-            out_row["scientificName"] = ""
-            out_row["scientificNameID"] = ""
-            out_row["taxonRank"] = ""
+            out_row["scientificName"] = INCERTAE_SEDIS_NAME
+            out_row["scientificNameID"] = INCERTAE_SEDIS_ID
+            out_row["taxonRank"] = INCERTAE_SEDIS_RANK
         else:
             cache_entry = worms_cache[(scientific_name, taxon_rank)]
             row_rank = taxon_rank.lower()

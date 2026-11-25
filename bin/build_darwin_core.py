@@ -230,6 +230,60 @@ def load_sintax_raw_by_asv(path: Path) -> dict[str, str]:
     return by_asv
 
 
+# SINTAX labels each rank with a letter. The formatted taxonomy table drops
+# those letters and fills columns from the left, so a missing rank shifts
+# every later name. The raw file still has the letters.
+SINTAX_RANK_BY_LETTER = {
+    "d": "kingdom",
+    "k": "kingdom",
+    "p": "phylum",
+    "c": "class",
+    "o": "order",
+    "f": "family",
+    "g": "genus",
+    "s": "species",
+}
+
+
+def sintax_ranks_from_assignment(assignment: str) -> dict[str, str]:
+    """Map a SINTAX taxonomy string onto kingdom–species using its rank letters."""
+
+    ranks = {rank: "" for rank in OUTPUT_RANK_COLUMNS}
+    for token in (assignment or "").split(","):
+        token = token.strip()
+        if ":" not in token:
+            continue
+        letter, name = token.split(":", 1)
+        if "(" in name and name.endswith(")"):
+            name = name[: name.rfind("(")]
+        rank = SINTAX_RANK_BY_LETTER.get(letter.strip().lower())
+        if rank:
+            ranks[rank] = normalize_missing_value(name.strip())
+    return ranks
+
+
+def load_sintax_filtered_ranks_by_asv(path: Path) -> dict[str, dict[str, str]]:
+    """Ranks that passed the SINTAX cutoff, taken from the raw result file.
+
+    Column 4 is the cutoff-filtered assignment. An empty field means no rank
+    passed the cutoff.
+    """
+
+    by_asv: dict[str, dict[str, str]] = {}
+    with path.open(newline="") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            asv_id = parts[0].strip()
+            if not asv_id:
+                continue
+            filtered = parts[3].strip() if len(parts) > 3 else ""
+            by_asv[asv_id] = sintax_ranks_from_assignment(filtered)
+    return by_asv
+
+
 def find_worms_matched(output_dir: Path, method: str) -> Path:
     path = output_dir / "worms" / method / f"worms_matched.{method}.tsv"
     if not path.is_file():
@@ -299,10 +353,19 @@ def merge_asv_taxonomy(
     *,
     raw_sintax: str = "",
     hits: list[str] | None = None,
+    sintax_ranks: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """SINTAX is the taxonomic basis, species level comes from VSEARCH only."""
+    """SINTAX is the taxonomic basis, species level comes from VSEARCH only.
+
+    sintax_ranks, when given, replaces the formatted SINTAX columns. Those
+    columns shift when a reference rank was omitted; the raw letters do not.
+    """
 
     vsearch_row = vsearch_row or {}
+    if sintax_ranks is not None:
+        sintax_row = dict(sintax_row)
+        for column in INPUT_RANK_COLUMNS:
+            sintax_row[column] = sintax_ranks.get(column.lower(), "")
     sintax_species = species_label(sintax_row)
     vsearch_species = vsearch_species_if_genus_agrees(sintax_row, vsearch_row)
 
@@ -354,6 +417,7 @@ def build_occurrence_table(
     clean_prefix: bool,
     sintax_raw_by_asv: dict[str, str] | None = None,
     vsearch_hits_by_asv: dict[str, list[str]] | None = None,
+    sintax_ranks_by_asv: dict[str, dict[str, str]] | None = None,
 ) -> list[tuple[str, str, str]]:
     """
     Build Darwin Core Occurrence table. Occurrence IDs are
@@ -385,6 +449,7 @@ def build_occurrence_table(
             vsearch_by_asv.get(asv_id),
             raw_sintax=(sintax_raw_by_asv or {}).get(asv_id, ""),
             hits=(vsearch_hits_by_asv or {}).get(asv_id),
+            sintax_ranks=(sintax_ranks_by_asv or {}).get(asv_id),
         )
 
         for sample_id, raw_value in dada2_row.items():
@@ -490,6 +555,9 @@ def build_darwin_core(
     dada2_rows = load_tsv(find_dada2_table(ampliseq_results))
     sintax_raw_path = find_sintax_raw_table(ampliseq_results)
     sintax_raw_by_asv = load_sintax_raw_by_asv(sintax_raw_path) if sintax_raw_path else {}
+    sintax_ranks_by_asv = (
+        load_sintax_filtered_ranks_by_asv(sintax_raw_path) if sintax_raw_path else {}
+    )
     vsearch_hits_path = find_vsearch_hits_table(ampliseq_results)
     vsearch_hits_by_asv = (
         load_vsearch_hits_by_asv(vsearch_hits_path) if vsearch_hits_path else {}
@@ -511,6 +579,7 @@ def build_darwin_core(
         clean_prefix=clean_prefix,
         sintax_raw_by_asv=sintax_raw_by_asv,
         vsearch_hits_by_asv=vsearch_hits_by_asv,
+        sintax_ranks_by_asv=sintax_ranks_by_asv,
     )
     build_dna_derived_data_table(
         dada2_rows,

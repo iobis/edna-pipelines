@@ -7,7 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
-from bin.build_darwin_core import identification_remarks, merge_asv_taxonomy, species_label
+from bin.build_darwin_core import (
+    identification_remarks,
+    merge_asv_taxonomy,
+    sintax_ranks_from_assignment,
+    species_label,
+)
 from bin.worms_match import clean_missing_rank_values, enrich_rows_with_worms, finest_taxon
 
 # From MIDORI header:
@@ -40,6 +45,33 @@ def test_species_label_rejects_gymnodinium_sp_placeholder() -> None:
 def test_merge_asv_taxonomy_omits_gymnodinium_sp_placeholder() -> None:
     merged = merge_asv_taxonomy(GYMNODINIUM_ROW, GYMNODINIUM_ROW)
     assert merged["species"] == ""
+
+
+def test_enrich_rows_with_worms_uses_incertae_sedis_when_every_rank_is_empty(tmp_path: Path) -> None:
+    worms_db = tmp_path / "worms.sqlite"
+    worms_db.write_text("")
+    empty = {"Kingdom": "", "Phylum": "NA", "Class": "", "Order": "", "Family": "", "Genus": "", "Species": ""}
+    named = {"Kingdom": "Eukaryota", "Phylum": "", "Class": "Dinophyceae", "Genus": "", "Species": ""}
+
+    def fake_match(taxa, worms_db):
+        return {
+            (name, rank): {
+                "matched_aphiaid": 19542,
+                "matched_name": name,
+                "canonical": name,
+                "rank": rank.lower(),
+            }
+            for name, rank in taxa
+        }
+
+    with patch("bin.worms_match.match_distinct_taxa", side_effect=fake_match):
+        enriched = enrich_rows_with_worms([empty, named], worms_db=worms_db)
+
+    assert enriched[0]["scientificName"] == "incertae sedis"
+    assert enriched[0]["scientificNameID"] == "urn:lsid:marinespecies.org:taxname:12"
+    assert enriched[0]["taxonRank"] == "kingdom"
+    assert enriched[1]["scientificName"] == "Dinophyceae"
+    assert enriched[1]["scientificNameID"] == "urn:lsid:marinespecies.org:taxname:19542"
 
 
 def test_finest_taxon_falls_back_to_genus_when_species_na() -> None:
@@ -201,6 +233,39 @@ def test_merge_asv_taxonomy_drops_vsearch_species_when_sintax_genus_missing() ->
     merged = merge_asv_taxonomy(sintax_row, vsearch_row)
     assert merged["species"] == ""
     assert merged["identificationRemarks"] == ""
+
+
+def test_sintax_ranks_from_assignment_keeps_a_missing_rank_empty() -> None:
+    ranks = sintax_ranks_from_assignment("d:Eukaryota,p:NA,c:Dinophyceae")
+    assert ranks["kingdom"] == "Eukaryota"
+    assert ranks["phylum"] == ""
+    assert ranks["class"] == "Dinophyceae"
+    assert ranks["order"] == ""
+
+
+def test_merge_asv_taxonomy_ignores_shifted_table_when_raw_letters_are_given() -> None:
+    shifted = {
+        "Kingdom": "Eukaryota",
+        "Phylum": "Annelida",
+        "Class": "Polychaeta",
+        "Order": "Opheliidae",
+        "Family": "Polyophthalmus",
+        "Genus": "Polyophthalmus_sp.",
+        "Species": "",
+    }
+    ranks = sintax_ranks_from_assignment(
+        "d:Eukaryota,p:Annelida,c:Polychaeta,f:Opheliidae,g:Polyophthalmus,s:Polyophthalmus_sp."
+    )
+    merged = merge_asv_taxonomy(
+        shifted,
+        {"Genus": "Polyophthalmus", "Species": "Polyophthalmus pictus"},
+        sintax_ranks=ranks,
+    )
+    assert merged["order"] == ""
+    assert merged["family"] == "Opheliidae"
+    assert merged["genus"] == "Polyophthalmus"
+    assert merged["species"] == "Polyophthalmus pictus"
+    assert merged["identificationRemarks"] == "SINTAX species assignment was: Polyophthalmus_sp."
 
 
 @pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
