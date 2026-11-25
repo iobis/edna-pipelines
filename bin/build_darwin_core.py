@@ -29,7 +29,7 @@ OCCURRENCE_FIELDS = (
     "identificationRemarks",
     "organismQuantity",
     "organismQuantityType",
-    "sample_id"
+    "materialSampleID",
 )
 DNA_DERIVED_DATA_FIELDS = (
     "occurrenceID",
@@ -409,7 +409,7 @@ def build_occurrence_table(
                 "taxonID": "",
                 "organismQuantity": abundance,
                 "organismQuantityType": "",
-                "sample_id": output_sample_id,
+                "materialSampleID": output_sample_id,
                 **{rank: merged.get(rank, "") for rank in OUTPUT_RANK_COLUMNS},
                 "identificationRemarks": merged.get("identificationRemarks", ""),
             }

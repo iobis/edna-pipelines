@@ -255,7 +255,12 @@ read_occurrence <- function(occurrence_path) {
   if (is.null(occurrence_path) || !file.exists(occurrence_path)) {
     return(NULL)
   }
-  as_tibble(read_tsv_safe(occurrence_path)) %>%
+  occ <- as_tibble(read_tsv_safe(occurrence_path))
+  # Tables written before materialSampleID used sample_id for the same value.
+  if (!"materialSampleID" %in% names(occ) && "sample_id" %in% names(occ)) {
+    occ <- rename(occ, materialSampleID = sample_id)
+  }
+  occ %>%
     mutate(asv_id = sub(".*_", "", .data$occurrenceID))
 }
 
@@ -401,7 +406,7 @@ empty_detected_species <- function() {
 
 empty_sample_summary <- function() {
   tibble(
-    sample_id = character(),
+    materialSampleID = character(),
     asvs = integer(),
     species = integer()
   )
@@ -412,35 +417,35 @@ sample_summary_table <- function(occurrence_path) {
   if (is.null(occ)) {
     return(NULL)
   }
-  needed <- c("sample_id", "asv_id", "species", "taxonRank")
+  needed <- c("materialSampleID", "asv_id", "species", "taxonRank")
   if (length(setdiff(needed, names(occ))) > 0) {
     return(NULL)
   }
 
   occ <- occ %>%
     mutate(
-      sample_id = trimws(as.character(.data$sample_id)),
+      materialSampleID = trimws(as.character(.data$materialSampleID)),
       species = trimws(as.character(.data$species))
     ) %>%
-    filter(nzchar(.data$sample_id))
+    filter(nzchar(.data$materialSampleID))
 
   if (nrow(occ) == 0) {
     return(empty_sample_summary())
   }
 
   asv_counts <- occ %>%
-    group_by(.data$sample_id) %>%
+    group_by(.data$materialSampleID) %>%
     summarise(asvs = n_distinct(.data$asv_id), .groups = "drop")
 
   species_counts <- occ %>%
     filter(.data$taxonRank == "species", nzchar(.data$species)) %>%
-    group_by(.data$sample_id) %>%
+    group_by(.data$materialSampleID) %>%
     summarise(species = n_distinct(.data$species), .groups = "drop")
 
   asv_counts %>%
-    left_join(species_counts, by = "sample_id") %>%
+    left_join(species_counts, by = "materialSampleID") %>%
     mutate(species = coalesce(.data$species, 0L)) %>%
-    arrange(.data$sample_id)
+    arrange(.data$materialSampleID)
 }
 
 first_non_empty <- function(x) {
@@ -453,7 +458,7 @@ detected_species_table <- function(occurrence_path) {
   if (is.null(occ)) {
     return(NULL)
   }
-  needed <- c("species", "phylum", "class", "sample_id", "organismQuantity", "asv_id")
+  needed <- c("species", "phylum", "class", "materialSampleID", "organismQuantity", "asv_id")
   if (length(setdiff(needed, names(occ))) > 0 || !"taxonRank" %in% names(occ)) {
     return(NULL)
   }
@@ -481,7 +486,7 @@ detected_species_table <- function(occurrence_path) {
       class = first_non_empty(.data$class),
       asvs = n_distinct(.data$asv_id),
       reads = sum(.data$organismQuantity),
-      samples = n_distinct(.data$sample_id),
+      samples = n_distinct(.data$materialSampleID),
       .groups = "drop"
     ) %>%
     arrange(desc(.data$reads), desc(.data$asvs), .data$species)

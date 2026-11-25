@@ -79,6 +79,8 @@ def test_occurrence_and_dna_share_assay_qualified_id(tmp_path: Path) -> None:
         dna_rows = list(csv.DictReader(handle, delimiter="\t"))
 
     assert occurrence_rows[0]["occurrenceID"] == "OBIS_EDNA_1_GC_abc"
+    assert occurrence_rows[0]["materialSampleID"] == "OBIS_EDNA_1"
+    assert "sample_id" not in occurrence_rows[0]
     assert "assay_name" not in occurrence_rows[0]
     assert occurrence_rows[0]["locality"] == "Reef"
     assert dna_rows[0]["occurrenceID"] == "OBIS_EDNA_1_GC_abc"
